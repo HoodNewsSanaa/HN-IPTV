@@ -1,7 +1,8 @@
 param([switch]$NoRestore)
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
-$restoreArguments = if ($NoRestore) { @('--no-restore') } else { @() }
+[string[]]$restoreArguments = @()
+if ($NoRestore) { $restoreArguments += '--no-restore' }
 dotnet run @restoreArguments --project (Join-Path $PSScriptRoot "HN-IPTV.Core.SmokeTests/HN-IPTV.Core.SmokeTests.csproj") -c Release
 if ($LASTEXITCODE -ne 0) { throw "Shared Core checks failed." }
 
