@@ -1,5 +1,6 @@
 # Run only on an expendable Windows test account. Existing installs/data are refused.
-param([ValidateRange(1, 120)][int]$CleanupTimeoutSeconds = 30)
+param([ValidateRange(1, 120)][int]$CleanupTimeoutSeconds = 30,
+      [string]$PreviousSetup = '', [string]$ExpectedVersion = '0.8.0')
 $ErrorActionPreference = 'Stop'
 $setup = Join-Path $PSScriptRoot 'dist/HN-IPTV-Setup.exe'
 $data = Join-Path $env:LOCALAPPDATA 'HN-IPTV'
@@ -7,6 +8,7 @@ $registration = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{CD93
 if (Test-Path -LiteralPath $data) { throw 'Installer test requires an account without existing HN-IPTV data.' }
 if (Test-Path -LiteralPath $registration) { throw 'Installer test requires an account without an existing HN-IPTV installation.' }
 if (-not (Test-Path -LiteralPath $setup)) { throw 'Build dist/HN-IPTV-Setup.exe before running the installer test.' }
+if ($PreviousSetup -and -not (Test-Path -LiteralPath $PreviousSetup)) { throw 'Previous installer is missing.' }
 $install = Join-Path $env:TEMP ('HN-IPTV-installer-test-' + [guid]::NewGuid().ToString('N'))
 $uninstaller = Join-Path $install 'unins000.exe'
 $logs = Join-Path $PSScriptRoot 'artifacts/installer-test'
@@ -56,7 +58,8 @@ function Remove-TestPath([string]$path) {
 
 try {
     $arguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/DIR=`"$install`"")
-    Run-Installer $setup $arguments 'initial-install'
+    $initialSetup = if ($PreviousSetup) { $PreviousSetup } else { $setup }
+    Run-Installer $initialSetup $arguments 'initial-install'
     if (-not (Test-Path -LiteralPath (Join-Path $install 'HN-IPTV.exe'))) { throw 'Installed EXE missing.' }
     if (-not (Test-Path -LiteralPath $registration)) { throw 'Installed Apps registration missing.' }
     New-Item -ItemType Directory -Path $data | Out-Null
@@ -64,6 +67,15 @@ try {
     $sentinel = Join-Path $data 'upgrade-test-sentinel.txt'
     Set-Content -LiteralPath $sentinel -Value 'synthetic test data'
     $hash = (Get-FileHash -LiteralPath $sentinel).Hash
+    if ($PreviousSetup) {
+        # Omit /DIR: the newer installer must remember the previous custom location.
+        Run-Installer $setup @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-') 'version-upgrade'
+        if ((Get-FileHash -LiteralPath $sentinel).Hash -ne $hash) { throw 'Version upgrade changed user data.' }
+        $registeredVersion = (Get-ItemProperty -LiteralPath $registration).DisplayVersion
+        if ($registeredVersion -ne $ExpectedVersion) { throw "Upgrade registered version $registeredVersion instead of $ExpectedVersion." }
+        if (-not (Test-Path -LiteralPath (Join-Path $install 'HN-IPTV.exe'))) { throw 'Upgrade did not preserve the installation directory.' }
+        Write-Host "Previous-version upgrade to $ExpectedVersion preserved data and installation location."
+    }
     Run-Installer $setup $arguments 'reinstall'
     if ((Get-FileHash -LiteralPath $sentinel).Hash -ne $hash) { throw 'Reinstall changed user data.' }
 

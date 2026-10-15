@@ -1,0 +1,157 @@
+using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
+
+namespace HnIptv;
+
+// Comparison backend only. The regular distribution contains VLC, not both engines.
+internal sealed class PlaybackController
+{
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly CancellationTokenSource _eventStop = new();
+    private readonly ConcurrentDictionary<ulong, TaskCompletionSource> _commands = new();
+    private Task _events = Task.CompletedTask;
+    private IntPtr _handle;
+    private long _nextCommand;
+    private bool _disposed, _paused;
+    private volatile bool _playing;
+    public event Action? PlaybackError;
+
+    private async Task RunAsync(Action action, CancellationToken ct = default)
+    {
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await Task.Run(() => { ct.ThrowIfCancellationRequested(); ObjectDisposedException.ThrowIf(_disposed, this); action(); }, ct).ConfigureAwait(false);
+        }
+        finally { _gate.Release(); }
+    }
+    private void Initialize(IntPtr hwnd)
+    {
+        if (_handle != IntPtr.Zero) return;
+        if (hwnd == IntPtr.Zero) throw new InvalidOperationException("Video surface is not ready.");
+        _handle = Native.mpv_create();
+        if (_handle == IntPtr.Zero) throw new InvalidOperationException("mpv initialization failed.");
+        try
+        {
+            foreach (var option in new[] { ("config", "no"), ("terminal", "no"), ("osc", "no"),
+                ("input-default-bindings", "no"), ("input-vo-keyboard", "no"), ("ytdl", "no"),
+                ("hwdec", "auto-safe"), ("vo", "gpu"), ("gpu-context", "d3d11"), ("cache", "yes") })
+                Check(Native.mpv_set_option_string(_handle, option.Item1, option.Item2));
+            long window = hwnd.ToInt64();
+            Check(Native.mpv_set_option(_handle, "wid", 4, ref window));
+            Check(Native.mpv_initialize(_handle));
+            _events = Task.Run(EventLoop);
+        }
+        catch { Native.mpv_terminate_destroy(_handle); _handle = IntPtr.Zero; throw; }
+    }
+    public async Task PlayAsync(Uri uri, IntPtr hwnd, int volume, CancellationToken ct, int bufferMilliseconds = 1200)
+    {
+        await RunAsync(() =>
+        {
+            Initialize(hwnd);
+            Set("volume", volume.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            var seconds = (Math.Clamp(bufferMilliseconds, 250, 10000) / 1000d).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            Set("cache-pause-wait", seconds);
+            Set("demuxer-readahead-secs", seconds);
+            Set("pause", "no"); _paused = false; _playing = false;
+        }, ct).ConfigureAwait(false);
+        await CommandAsync(ct, "loadfile", uri.AbsoluteUri, "replace").ConfigureAwait(false);
+    }
+    public async Task StopAsync()
+    {
+        if (_handle == IntPtr.Zero) return;
+        await CommandAsync(default, "stop").ConfigureAwait(false);
+        _playing = false;
+    }
+    public Task PauseAsync() => RunAsync(() => { if (_handle != IntPtr.Zero) { _paused = !_paused; Set("pause", _paused ? "yes" : "no"); } });
+    public Task VolumeAsync(int volume) => RunAsync(() => { if (_handle != IntPtr.Zero) Set("volume", volume.ToString(System.Globalization.CultureInfo.InvariantCulture)); });
+    internal async Task<(bool Playing, long Time)> ProgressAsync()
+    {
+        (bool Playing, long Time) result = default;
+        await RunAsync(() =>
+        {
+            if (_handle == IntPtr.Zero) return;
+            double position = 0;
+            int status = Native.mpv_get_property(_handle, "time-pos", 5, ref position);
+            result = (_playing && !_paused, status >= 0 ? (long)(position * 1000) : -1);
+        }).ConfigureAwait(false);
+        return result;
+    }
+    private async Task CommandAsync(CancellationToken ct, params string[] args)
+    {
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var id = (ulong)Interlocked.Increment(ref _nextCommand);
+        await RunAsync(() =>
+        {
+            _commands[id] = completion;
+            var strings = args.Select(Marshal.StringToCoTaskMemUTF8).ToArray();
+            var vector = Marshal.AllocHGlobal((strings.Length + 1) * IntPtr.Size);
+            try
+            {
+                for (int i = 0; i < strings.Length; i++) Marshal.WriteIntPtr(vector, i * IntPtr.Size, strings[i]);
+                Marshal.WriteIntPtr(vector, strings.Length * IntPtr.Size, IntPtr.Zero);
+                int error = Native.mpv_command_async(_handle, id, vector);
+                if (error < 0) { _commands.TryRemove(id, out _); Check(error); }
+            }
+            finally { foreach (var item in strings) Marshal.FreeCoTaskMem(item); Marshal.FreeHGlobal(vector); }
+        }, ct).ConfigureAwait(false);
+        await completion.Task.WaitAsync(ct).ConfigureAwait(false);
+    }
+    private void EventLoop()
+    {
+        try
+        {
+            while (!_eventStop.IsCancellationRequested)
+            {
+                var pointer = Native.mpv_wait_event(_handle, 0.1);
+                if (pointer == IntPtr.Zero) continue;
+                var entry = Marshal.PtrToStructure<MpvEvent>(pointer);
+                if (entry.Id == 5 && _commands.TryRemove(entry.UserData, out var completion))
+                {
+                    if (entry.Error < 0) completion.TrySetException(new InvalidOperationException($"mpv command failed ({entry.Error})."));
+                    else completion.TrySetResult();
+                }
+                else if (entry.Id == 8) _playing = true; // FILE_LOADED
+                else if (entry.Id == 7) // END_FILE; the first two fields are reason/error.
+                {
+                    _playing = false;
+                    if (entry.Data != IntPtr.Zero && Marshal.ReadInt32(entry.Data) == 4) PlaybackError?.Invoke();
+                }
+                else if (entry.Id == 1) break;
+            }
+        }
+        catch (Exception ex) { App.LogException("mpv.events", ex); }
+        finally { foreach (var item in _commands.Values) item.TrySetCanceled(); _commands.Clear(); }
+    }
+    public async Task ShutdownAsync()
+    {
+        await _gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _eventStop.Cancel();
+            await _events.ConfigureAwait(false);
+            if (_handle != IntPtr.Zero) await Task.Run(() => Native.mpv_terminate_destroy(_handle)).ConfigureAwait(false);
+            _handle = IntPtr.Zero;
+        }
+        finally { _gate.Release(); }
+    }
+    private void Set(string property, string value) => Check(Native.mpv_set_property_string(_handle, property, value));
+    private static void Check(int code) { if (code < 0) throw new InvalidOperationException($"mpv operation failed ({code})."); }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MpvEvent { public int Id, Error; public ulong UserData; public IntPtr Data; }
+    private static class Native
+    {
+        private const string Library = "libmpv-2.dll";
+        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr mpv_create();
+        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern int mpv_initialize(IntPtr handle);
+        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern void mpv_terminate_destroy(IntPtr handle);
+        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr mpv_wait_event(IntPtr handle, double timeout);
+        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern int mpv_command_async(IntPtr handle, ulong id, IntPtr args);
+        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern int mpv_set_option_string(IntPtr handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, [MarshalAs(UnmanagedType.LPUTF8Str)] string value);
+        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern int mpv_set_option(IntPtr handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, int format, ref long value);
+        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern int mpv_set_property_string(IntPtr handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, [MarshalAs(UnmanagedType.LPUTF8Str)] string value);
+        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern int mpv_get_property(IntPtr handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, int format, ref double value);
+    }
+}

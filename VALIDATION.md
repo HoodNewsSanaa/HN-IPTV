@@ -1,3 +1,7 @@
+# Update 8 validation
+
+See [VALIDATION-0.8.md](VALIDATION-0.8.md) for the current build. Everything below is historical and does not establish Update 8 runtime validation.
+
 # 0.7.1 hotfix validation
 
 The user's Windows Runtime event confirms `ObjectDisposedException` in `MainWindow.ChannelsList_SelectionChanged`. The underlying cancel/dispose/cancel sequence was reproduced locally using the PowerShell .NET runtime. The hotfix clears the owning fields and adds actual-window regressions to the existing Windows smoke suite. Local hotfix checks: the complete WPF app and updated Windows smoke-test harness cross-compiled in Release for win-x64 with zero warnings/errors; core smoke tests passed; seven installer-orchestration simulations passed; the actual cancellation helper cancelled its token, cleared ownership and accepted 100 repeated calls. Native WPF execution remains pending on GitHub Actions/Windows. Portable startup is not established by the installed-edition crash log.

@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.7.1"
+  #define AppVersion "0.8.0"
 #endif
 [Setup]
 AppId={{CD93EEDF-5518-4324-92BD-06600458F64C}
@@ -9,11 +9,18 @@ AppVerName=HN-IPTV {#AppVersion}
 AppPublisher=HN-IPTV Project
 DefaultDirName={localappdata}\Programs\HN-IPTV
 DefaultGroupName=HN-IPTV
+; Keep this AppId, installation scope and data location stable across releases.
+UsePreviousAppDir=yes
+UsePreviousTasks=yes
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\dist
 OutputBaseFilename=HN-IPTV-Setup
+#ifdef QuickCompression
+Compression=lzma2/fast
+#else
 Compression=lzma2/ultra64
+#endif
 SolidCompression=yes
 WizardStyle=modern
 SetupIconFile=..\HN-IPTV\Assets\HN-IPTV.ico

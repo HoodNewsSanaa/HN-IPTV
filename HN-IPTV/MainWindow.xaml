@@ -192,13 +192,21 @@
                 </Grid>
                 <Grid Grid.Row="3" x:Name="PlaybackButtons" Margin="0,12,0,0">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="110"/>
+                        <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="85"/>
                     </Grid.ColumnDefinitions>
                     <Button Grid.Column="0" Content="▶  Play" Click="Play_Click" Margin="0,0,8,0"/>
                     <Button Grid.Column="1" Content="Ⅱ  Pause" Click="Pause_Click" Margin="0,0,8,0"/>
                     <Button Grid.Column="2" Content="■  Stop" Click="Stop_Click"/>
-                    <Button Grid.Column="4" Content="⛶  Fullscreen (F)" Click="Fullscreen_Click" Margin="10,0"/>
-                    <Slider Grid.Column="5" x:Name="VolumeSlider" Minimum="0" Maximum="100" Value="85"
+                    <Button Grid.Column="4" Content="⛶" ToolTip="Fullscreen (F)" Click="Fullscreen_Click" Margin="5,0"/>
+                    <Button Grid.Column="5" Content="PiP" ToolTip="Floating picture in picture" Click="Pip_Click" Margin="0,0,5,0"/>
+                    <ComboBox Grid.Column="6" x:Name="BufferSelector" Width="94" VerticalAlignment="Center" Margin="0,0,7,0"
+                              ToolTip="Playback buffer: quicker tuning or more tolerance for interruptions. Applies on next tune."
+                              SelectionChanged="BufferSelector_SelectionChanged">
+                        <ComboBoxItem Content="Fast" Tag="500"/>
+                        <ComboBoxItem Content="Balanced" Tag="1200"/>
+                        <ComboBoxItem Content="Resilient" Tag="3000"/>
+                    </ComboBox>
+                    <Slider Grid.Column="7" x:Name="VolumeSlider" Minimum="0" Maximum="100" Value="85"
                             TickFrequency="10" ValueChanged="VolumeSlider_ValueChanged" VerticalAlignment="Center"/>
                 </Grid>
             </Grid>

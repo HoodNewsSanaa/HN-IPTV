@@ -1,6 +1,8 @@
+param([switch]$NoRestore)
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
-dotnet run --project (Join-Path $PSScriptRoot "HN-IPTV.Core.SmokeTests/HN-IPTV.Core.SmokeTests.csproj") -c Release
+$restoreArguments = if ($NoRestore) { @('--no-restore') } else { @() }
+dotnet run @restoreArguments --project (Join-Path $PSScriptRoot "HN-IPTV.Core.SmokeTests/HN-IPTV.Core.SmokeTests.csproj") -c Release
 if ($LASTEXITCODE -ne 0) { throw "Shared Core checks failed." }
 
 # WPF RangeBase.Value (used by ProgressBar) has two-way binding semantics by default.

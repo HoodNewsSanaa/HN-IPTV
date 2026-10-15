@@ -1,14 +1,22 @@
-param([switch]$FastStartup, [string]$Version = '0.7.0')
+param([switch]$FastStartup, [string]$Version = '0.8.0', [ValidateSet('vlc','mpv')][string]$Engine = 'vlc', [switch]$NoRestore)
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must be major.minor.patch.' }
+if ($Engine -eq 'mpv') { & (Join-Path $PSScriptRoot 'prepare-mpv.ps1') }
 $publish = Join-Path $PSScriptRoot 'artifacts/publish'
 if (Test-Path $publish) { Remove-Item -LiteralPath $publish -Recurse -Force }
 $readyToRun = if ($FastStartup) { 'true' } else { 'false' }
+$restoreArguments = if ($NoRestore) { @('--no-restore') } else { @() }
 & dotnet publish (Join-Path $PSScriptRoot 'HN-IPTV/HN-IPTV.csproj') -c Release -r win-x64 --self-contained true `
     -p:PublishSingleFile=false -p:PublishTrimmed=false "-p:PublishReadyToRun=$readyToRun" `
-    "-p:Version=$Version" -p:DebugType=none -p:DebugSymbols=false -o $publish
+    "-p:Version=$Version" "-p:PlaybackEngine=$Engine" @restoreArguments -p:DebugType=none -p:DebugSymbols=false -p:CopyOutputSymbolsToPublishDirectory=false -o $publish
 if ($LASTEXITCODE -ne 0) { throw 'Windows x64 publish failed.' }
+# Incremental referenced-project builds may leave symbols from an earlier test
+# configuration. Symbols are retained in build outputs, never release payloads.
+Get-ChildItem $publish -Recurse -File -Filter '*.pdb' | Remove-Item -Force
 Copy-Item (Join-Path $PSScriptRoot 'PORTABILITY.md'),(Join-Path $PSScriptRoot 'THIRD-PARTY.md') $publish
 Copy-Item (Join-Path $PSScriptRoot 'licenses') $publish -Recurse
-& (Join-Path $PSScriptRoot 'verify-package.ps1') -PublishDirectory $publish
+$manifest = [ordered]@{ version=$Version; engine=$Engine; source_commit=$env:GITHUB_SHA;
+    application_sha256=(Get-FileHash (Join-Path $publish 'HN-IPTV.dll') -Algorithm SHA256).Hash.ToLowerInvariant() }
+$manifest | ConvertTo-Json | Set-Content (Join-Path $publish 'build-manifest.json') -Encoding utf8
+& (Join-Path $PSScriptRoot 'verify-package.ps1') -PublishDirectory $publish -Engine $Engine
 & (Join-Path $PSScriptRoot 'measure-publish.ps1') -PublishDirectory $publish

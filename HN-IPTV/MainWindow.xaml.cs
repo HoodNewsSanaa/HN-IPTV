@@ -26,6 +26,14 @@ public partial class MainWindow : Window
     private ChannelIndex _channelIndex = new(Array.Empty<Channel>());
     private readonly ObservableCollection<ProgramEntry> _programs = new();
     private ICollectionView _channelView;
+    private readonly BulkObservableCollection<Channel> _visibleChannels = new();
+    private string _boundGroup = "";
+    private readonly Dictionary<string, double> _groupOffsets = new();
+    private PlayerSettings _playerSettings = new();
+    private PictureInPictureWindow? _pip;
+    private readonly Dictionary<string, DateTimeOffset> _failedTunes = new();
+    private static string PlayerSettingsPath => Path.Combine(AppStorage.DataDirectory, "player-settings.json");
+    private readonly LatestSaveQueue<PlayerSettings> _playerSettingsSaves = new(settings => settings.Save(PlayerSettingsPath));
     private bool _loadingCatalog;
     private readonly PlaylistLibrary _library = AppStorage.CreateLibrary();
     private PlaylistProfile? _activePlaylist;
@@ -52,7 +60,7 @@ public partial class MainWindow : Window
     private readonly ChannelPreferences _preferences = new(Path.Combine(AppStorage.DataDirectory, "channel-preferences.json"));
     private readonly ChannelLogoCache _logos = new(Path.Combine(AppStorage.DataDirectory, "logos"));
     private string _providerKey = "";
-    private readonly SemaphoreSlim _epgLimiter = new(2);
+    private readonly PriorityWorkGate _epgLimiter = new(2);
     private readonly Dictionary<string, Task<IReadOnlyList<ProgramEntry>>> _epgRequests = new();
     private CancellationTokenSource _previewCts = new();
     private readonly DispatcherTimer _holdTimer = new() { Interval = TimeSpan.FromMilliseconds(650) };
@@ -90,7 +98,7 @@ public partial class MainWindow : Window
             if (!_minimized) ScheduleVisibleRows();
             // Keep the video HWND and player attached; never Stop, rebind, or refresh the catalog here.
         };
-        _channelView = CollectionViewSource.GetDefaultView(_channels);
+        _channelView = CollectionViewSource.GetDefaultView(_visibleChannels);
         ChannelsList.ItemsSource = _channelView;
         EpgList.ItemsSource = _programs;
         // Defer native VLC initialization until the first actual playback request.
@@ -131,7 +139,13 @@ public partial class MainWindow : Window
         {
             SetStatus("Loading saved playlists...");
             using var timing = App.Measure("library.load");
-            await Task.Run(() => { _library.Load(); _preferences.Load(); });
+            await Task.Run(() =>
+            {
+                _library.Load(); _preferences.Load();
+                try { _playerSettings = PlayerSettings.Load(PlayerSettingsPath); }
+                catch (Exception ex) { App.LogException("settings.load", ex); }
+            });
+            BufferSelector.SelectedIndex = _playerSettings.BufferMilliseconds <= 500 ? 0 : _playerSettings.BufferMilliseconds >= 3000 ? 2 : 1;
             if (_closing) return;
             _ = _logos.PruneAsync();
             _libraryLoadedSuccessfully = true;
@@ -168,7 +182,7 @@ public partial class MainWindow : Window
         var index = _channelIndex;
         var group = (GroupsList.SelectedItem as ChannelGroup)?.Id ?? "*";
         var query = SearchBox.Text.Trim();
-        var hidden = _activePlaylist?.HiddenGroupIds ?? new HashSet<string>();
+        var hidden = _activePlaylist?.HiddenGroupIds.ToHashSet(StringComparer.Ordinal) ?? new HashSet<string>();
         var selected = ChannelsList.SelectedItem as Channel;
         try
         {
@@ -182,13 +196,25 @@ public partial class MainWindow : Window
             _loadingCatalog = true;
             try
             {
-                _channelView = new ListCollectionView(filtered);
-                ChannelsList.ItemsSource = _channelView;
+                var scroll = FindChannelScroller(ChannelsList);
+                if (_boundGroup.Length > 0 && scroll != null) _groupOffsets[_boundGroup] = scroll.VerticalOffset;
+                bool changed = !_visibleChannels.SequenceEqual(filtered);
+                if (changed) _visibleChannels.ReplaceAll(filtered);
+                if (ChannelsList.ItemsSource == null) ChannelsList.ItemsSource = _channelView;
                 ChannelCount.Text = $"{filtered.Count} CHANNELS";
                 ChannelsList.SelectedItem = selected != null && filtered.Contains(selected) ? selected : filtered.FirstOrDefault();
+                if (changed)
+                {
+                    double offset = _groupOffsets.GetValueOrDefault(group);
+                    _ = Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+                    { if (!token.IsCancellationRequested && !_closing) FindChannelScroller(ChannelsList)?.ScrollToVerticalOffset(offset); }));
+                }
+                _boundGroup = group;
             }
             finally { _loadingCatalog = false; }
-            ChannelsList_SelectionChanged(ChannelsList, new SelectionChangedEventArgs(ListBox.SelectionChangedEvent, Array.Empty<object>(), Array.Empty<object>()));
+            if (!ReferenceEquals(_selectedChannel, ChannelsList.SelectedItem) ||
+                (_selectedChannel != null && !_epgRequests.ContainsKey(PlaylistProfile.EpgKey(_selectedChannel.GroupId, _selectedChannel.Id))))
+                ChannelsList_SelectionChanged(ChannelsList, new SelectionChangedEventArgs(ListBox.SelectionChangedEvent, Array.Empty<object>(), Array.Empty<object>()));
             ScheduleVisibleRows();
         }
         catch (OperationCanceledException) { }
@@ -248,6 +274,8 @@ public partial class MainWindow : Window
             _filterCts.Cancel();
             ChannelsList.ItemsSource = null;
             _channels = loadedChannels;
+            _boundGroup = ""; _groupOffsets.Clear();
+            _selectedChannel = null;
             _allGroups = groupList;
             GroupsList.ItemsSource = null;
             _groupView = CollectionViewSource.GetDefaultView(_allGroups);
@@ -357,7 +385,10 @@ public partial class MainWindow : Window
 
     private void GroupsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_loadingCatalog || _channelView == null) return;
+        if (_loadingCatalog || _closing || _channelView == null) return;
+        // Abandon guide/logo work from the old category; cached results remain on disk.
+        _previewCts.Cancel(); _previewCts.Dispose(); _previewCts = new();
+        _epgRequests.Clear();
         ChannelGroupHeading.Text = (GroupsList.SelectedItem as ChannelGroup)?.Name.ToUpperInvariant() ?? "ALL CHANNELS";
         if (_activePlaylist != null)
         {
@@ -451,6 +482,7 @@ public partial class MainWindow : Window
             {
                 _ = LoadLogoAsync(row, channel, _previewCts.Token);
                 var key = PlaylistProfile.EpgKey(channel.GroupId, channel.Id);
+                if (!_epgRequests.ContainsKey(key)) channel.EpgPreviewLoaded = false;
                 if (_activePlaylist?.ProviderEpgFetchedAt.TryGetValue(key, out var fetched) == true &&
                     DateTimeOffset.UtcNow - fetched >= TimeSpan.FromMinutes(Math.Clamp(_activePlaylist.EpgRefreshMinutes, 5, 1440)))
                 { channel.EpgPreviewLoaded = false; _epgRequests.Remove(key); }
@@ -500,7 +532,11 @@ public partial class MainWindow : Window
     private Task<IReadOnlyList<ProgramEntry>> GetProgramsAsync(Channel channel, CancellationToken ct)
     {
         var requestKey = PlaylistProfile.EpgKey(channel.GroupId, channel.Id);
-        if (_epgRequests.TryGetValue(requestKey, out var existing) && !existing.IsCanceled && !existing.IsFaulted) return existing;
+        if (_epgRequests.TryGetValue(requestKey, out var existing) && !existing.IsCanceled && !existing.IsFaulted)
+        {
+            if (ReferenceEquals(_selectedChannel, channel)) _epgLimiter.Promote(requestKey);
+            return existing;
+        }
         foreach (var key in _epgRequests.Where(kv => kv.Value.IsCompleted).Select(kv => kv.Key).Take(Math.Max(0, _epgRequests.Count - 128)).ToArray())
             _epgRequests.Remove(key);
         var profile = _activePlaylist;
@@ -514,8 +550,7 @@ public partial class MainWindow : Window
 
         async Task<IReadOnlyList<ProgramEntry>> LoadProgramsAsync()
         {
-            await _epgLimiter.WaitAsync(ct);
-            try
+            using var lease = await _epgLimiter.EnterAsync(requestKey, ReferenceEquals(_selectedChannel, channel), ct);
             {
                 var key = PlaylistProfile.EpgKey(channel.GroupId, channel.Id);
                 IReadOnlyList<ProgramEntry> cachedNative = profile != null &&
@@ -554,7 +589,6 @@ public partial class MainWindow : Window
                 }
                 return provider.Count > 0 ? provider : cachedNative;
             }
-            finally { _epgLimiter.Release(); }
         }
     }
 
@@ -639,11 +673,16 @@ public partial class MainWindow : Window
     }
 
     private async void ChannelsList_DoubleClick(object sender, MouseButtonEventArgs e) => await PlaySelectedAsync();
-    private async void Play_Click(object sender, RoutedEventArgs e) => await PlaySelectedAsync();
+    private async void Play_Click(object sender, RoutedEventArgs e) => await TuneSelectedAsync(forceRetry: true);
 
-    private async Task PlaySelectedAsync()
+    private Task PlaySelectedAsync() => TuneSelectedAsync(forceRetry: false);
+    private async Task TuneSelectedAsync(bool forceRetry)
     {
         if (_closing || _loadingCatalog || ChannelsList.SelectedItem is not Channel channel) return;
+        string failureKey = ChannelPreferences.Hash(_providerKey + "|" + channel.GroupId + "|" + channel.Id);
+        foreach (var key in _failedTunes.Where(x => x.Value <= DateTimeOffset.UtcNow).Select(x => x.Key).ToArray()) _failedTunes.Remove(key);
+        if (!forceRetry && _failedTunes.ContainsKey(failureKey))
+        { SetStatus("This channel failed recently. Press Play to retry now."); return; }
         CancelAndClear(ref _tuneCts);
         var cts = new CancellationTokenSource();
         _tuneCts = cts;
@@ -660,8 +699,11 @@ public partial class MainWindow : Window
             if (cts.IsCancellationRequested) return;
             if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
                 throw new InvalidOperationException("The source did not provide a valid stream URL.");
-            await _playback.PlayAsync(uri, VideoView.VideoHandle, (int)VolumeSlider.Value, cts.Token);
+            using var timing = App.Measure("playback.tune_request");
+            await _playback.PlayAsync(uri, VideoView.VideoHandle, (int)VolumeSlider.Value, cts.Token, _playerSettings.BufferMilliseconds);
             if (cts.IsCancellationRequested || _closing) return;
+            _failedTunes.Remove(failureKey);
+            if (_pip != null) _pip.Title = "HN-IPTV — " + channel.Name;
             SetStatus("Playing " + channel.Name + ".");
         }
         catch (OperationCanceledException) { }
@@ -669,6 +711,9 @@ public partial class MainWindow : Window
         {
             if (!cts.IsCancellationRequested)
             {
+                App.LogException("playback.tune", ex);
+                if (_failedTunes.Count >= 128) _failedTunes.Remove(_failedTunes.Keys.First());
+                _failedTunes[failureKey] = DateTimeOffset.UtcNow.AddSeconds(15);
                 SetStatus("Unable to play " + channel.Name + ": " + ex.Message);
                 MessageBox.Show(this, ex.Message, "Playback error", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
@@ -703,7 +748,7 @@ public partial class MainWindow : Window
         if (ReferenceEquals(_selectedChannel, channel))
             FavoriteButton.Content = channel.IsFavorite ? "★  Favorited" : "☆  Favorite";
         SavePreferences();
-        RefreshChannels();
+        if ((GroupsList.SelectedItem as ChannelGroup)?.Id == "fav") RefreshChannels();
     }
 
     private async void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -712,6 +757,65 @@ public partial class MainWindow : Window
     }
 
     private void Fullscreen_Click(object sender, RoutedEventArgs e) => ToggleFullscreen();
+
+    private static ScrollViewer? FindChannelScroller(DependencyObject parent)
+    {
+        if (parent is ScrollViewer scroll) return scroll;
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            if (FindChannelScroller(VisualTreeHelper.GetChild(parent, i)) is { } child) return child;
+        return null;
+    }
+
+    private void BufferSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_libraryLoadedSuccessfully || _closing || BufferSelector.SelectedItem is not ComboBoxItem item) return;
+        if (!int.TryParse(item.Tag?.ToString(), out int buffer)) return;
+        _playerSettings = _playerSettings with { BufferMilliseconds = buffer };
+        SavePlayerSettings();
+        SetStatus("Buffer setting saved. Applies to the next channel you play.");
+    }
+    private void SavePlayerSettings()
+    {
+        _playerSettingsSaves.Enqueue(_playerSettings.Normalize());
+        _ = ObserveSaveAsync(_playerSettingsSaves.FlushAsync());
+    }
+    private void Pip_Click(object sender, RoutedEventArgs e) => TogglePictureInPicture();
+    private void TogglePictureInPicture()
+    {
+        if (_closing || !_libraryLoadedSuccessfully) return;
+        if (_pip != null) { _pip.Close(); return; }
+        if (_isFullScreen) ToggleFullscreen();
+        try
+        {
+            var pip = new PictureInPictureWindow(VideoView, _playerSettings, (int)VolumeSlider.Value,
+                async () => { try { await _playback.PauseAsync(); } catch (Exception ex) { App.LogException("pip.pause", ex); } },
+                async muted => { try { await _playback.VolumeAsync(muted ? 0 : (int)VolumeSlider.Value); } catch (Exception ex) { App.LogException("pip.mute", ex); } },
+                value => VolumeSlider.Value = value,
+                settings =>
+                {
+                    _playerSettings = _playerSettings with { PipLeft = settings.PipLeft, PipTop = settings.PipTop,
+                        PipWidth = settings.PipWidth, PipHeight = settings.PipHeight };
+                    SavePlayerSettings();
+                });
+            _pip = pip;
+            pip.Closed += async (_, _) =>
+            {
+                _pip = null;
+                try
+                {
+                    if (!_closing)
+                    {
+                        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+                        Activate();
+                        await _playback.VolumeAsync((int)VolumeSlider.Value);
+                    }
+                }
+                catch (Exception ex) { App.LogException("pip.volume", ex); }
+            };
+            pip.Show(); // No Owner: PiP must remain visible when the main window is minimized.
+        }
+        catch (Exception ex) { _pip = null; App.LogException("pip.open", ex); SetStatus("Picture in picture could not open."); }
+    }
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
@@ -731,6 +835,7 @@ public partial class MainWindow : Window
 
     private void ToggleFullscreen()
     {
+        if (_pip != null) { _pip.Close(); if (_pip != null) return; }
         if (!_isFullScreen)
         {
             _oldWindowStyle = WindowStyle;
@@ -1081,6 +1186,7 @@ public partial class MainWindow : Window
         e.Cancel = true;
         if (_closing) return;
         _closing = true;
+        if (_pip != null) { _pip.Close(); if (_pip != null) { _closing = false; return; } }
         TopBar.IsEnabled = false;
         _epgClock.Stop(); _refreshTimer.Stop(); _saveSelectionDebounce.Stop();
         _searchDebounce.Stop(); _rowDebounce.Stop(); EndHold();
@@ -1090,7 +1196,7 @@ public partial class MainWindow : Window
         {
             await _startupLoad;
             SaveLibrarySafely(); SavePreferences();
-            await Task.WhenAll(_librarySaves.FlushAsync(), _preferenceSaves.FlushAsync());
+            await Task.WhenAll(_librarySaves.FlushAsync(), _preferenceSaves.FlushAsync(), _playerSettingsSaves.FlushAsync());
         }
         catch (Exception ex)
         {

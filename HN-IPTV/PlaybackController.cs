@@ -27,7 +27,7 @@ internal sealed class PlaybackController
         finally { _gate.Release(); }
     }
 
-    public Task PlayAsync(Uri uri, IntPtr hwnd, int volume, CancellationToken ct) => RunAsync("vlc.tune", () =>
+    public Task PlayAsync(Uri uri, IntPtr hwnd, int volume, CancellationToken ct, int bufferMilliseconds = 1200) => RunAsync("vlc.tune", () =>
     {
         if (hwnd == IntPtr.Zero) throw new InvalidOperationException("Video surface is not ready.");
         if (_player == null)
@@ -42,8 +42,9 @@ internal sealed class PlaybackController
         _media?.Dispose(); _media = null;
         ct.ThrowIfCancellationRequested();
         _media = new Media(_vlc!, uri);
-        _media.AddOption(":network-caching=1200");
-        _media.AddOption(":live-caching=1200");
+        int buffer = Math.Clamp(bufferMilliseconds, 250, 10000);
+        _media.AddOption($":network-caching={buffer}");
+        _media.AddOption($":live-caching={buffer}");
         _player.Volume = volume;
         if (!_player.Play(_media)) throw new InvalidOperationException("The playback engine could not start the stream.");
     }, ct);

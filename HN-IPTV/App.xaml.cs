@@ -20,9 +20,9 @@ public partial class App : Application
 
     protected override async void OnStartup(StartupEventArgs e)
     {
-        DispatcherUnhandledException += (_, args) => LogException("dispatcher.unhandled", args.Exception);
+        DispatcherUnhandledException += (_, args) => LogFatalException("dispatcher.unhandled", args.Exception);
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
-        { if (args.ExceptionObject is Exception ex) LogException("clr.unhandled", ex); };
+        { if (args.ExceptionObject is Exception ex) LogFatalException("clr.unhandled", ex); };
         TaskScheduler.UnobservedTaskException += (_, args) =>
         { LogException("task.unobserved", args.Exception); args.SetObserved(); };
         base.OnStartup(e);
@@ -55,14 +55,27 @@ public partial class App : Application
                 if (clock.ElapsedMilliseconds > 250) LogDiagnostic($"dispatcher.delay_ms={clock.ElapsedMilliseconds}");
             }));
         }, null, 2000, 2000);
-        LogDiagnostic("app.start version=0.7.0");
+        LogDiagnostic($"app.start version={BuildInfo.Version} engine={BuildInfo.Engine}");
     }
 
     public static void LogDiagnostic(string entry) => Log.Writer.TryWrite($"{DateTimeOffset.UtcNow:O} {entry}");
     public static void LogException(string context, Exception exception)
     {
         // Messages, URLs, usernames, file paths and VLC debug output are never logged.
-        LogDiagnostic($"{context} error_type={exception.GetType().Name}");
+        LogDiagnostic($"{context} {HnIptv.Diagnostics.SafeException.Describe(exception)}");
+    }
+    private static void LogFatalException(string context, Exception exception)
+    {
+        LogException(context, exception);
+        // The async log queue may not flush before termination. Only the fatal
+        // path writes synchronously; regular UI/network handlers keep async logging.
+        try
+        {
+            var path = Path.Combine(AppStorage.DataDirectory, "crash.log");
+            if (File.Exists(path) && new FileInfo(path).Length > 131072) File.Move(path, path + ".1", true);
+            File.AppendAllText(path, $"{DateTimeOffset.UtcNow:O} {context} {HnIptv.Diagnostics.SafeException.Describe(exception)}{Environment.NewLine}");
+        }
+        catch (Exception) { }
     }
     public static IDisposable Measure(string operation) => new Timing(operation);
     private sealed class Timing(string operation) : IDisposable

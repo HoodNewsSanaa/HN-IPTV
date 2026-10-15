@@ -209,6 +209,44 @@ try
 finally { Directory.Delete(directory, recursive: true); }
 Console.WriteLine("Portable, atomic persistence, cancellation, large-catalog and save-queue checks passed.");
 
+// Selected EPG work overtakes queued previews; cancellation never leaks capacity.
+var priorityGate = new PriorityWorkGate(1);
+var busyLease = await priorityGate.EnterAsync("busy", false, default);
+var previewOne = priorityGate.EnterAsync("preview-one", false, default);
+var selectedGuide = priorityGate.EnterAsync("selected", false, default);
+using var cancelledGuide = new CancellationTokenSource();
+var abandoned = priorityGate.EnterAsync("abandoned", false, cancelledGuide.Token);
+cancelledGuide.Cancel();
+priorityGate.Promote("selected"); busyLease.Dispose();
+using (await selectedGuide.WaitAsync(TimeSpan.FromSeconds(2)))
+    Check(!previewOne.IsCompleted, "selected EPG promotion");
+using (await previewOne.WaitAsync(TimeSpan.FromSeconds(2))) { }
+try { await abandoned; Check(false, "queued guide cancellation"); } catch (OperationCanceledException) { }
+using (await priorityGate.EnterAsync("after-cancel", true, default).WaitAsync(TimeSpan.FromSeconds(2))) { }
+
+var settingsDirectory = Path.Combine(Path.GetTempPath(), "hn-player-settings-" + Guid.NewGuid().ToString("N"));
+try
+{
+    var path = Path.Combine(settingsDirectory, "player-settings.json");
+    new PlayerSettings { BufferMilliseconds = 3000, PipWidth = 640, PipLeft = -500 }.Save(path);
+    var savedSettings = PlayerSettings.Load(path);
+    Check(savedSettings.BufferMilliseconds == 3000 && savedSettings.PipWidth == 640 && savedSettings.PipLeft == -500,
+        "portable buffer and PiP settings round trip");
+    var safeSettings = new PlayerSettings { BufferMilliseconds = -1, PipWidth = double.NaN, PipHeight = 0 }.Normalize();
+    Check(safeSettings.BufferMilliseconds == 250 && safeSettings.PipWidth == 480 && safeSettings.PipHeight == 220,
+        "invalid player settings bounded");
+}
+finally { Directory.Delete(settingsDirectory, true); }
+try { throw new InvalidOperationException("https://provider.test/user/secret?password=hidden"); }
+catch (Exception ex)
+{
+    string diagnostic = HnIptv.Diagnostics.SafeException.Describe(ex);
+    Check(diagnostic.Contains("InvalidOperationException") && !diagnostic.Contains("secret") &&
+        !diagnostic.Contains("provider.test") && !diagnostic.Contains("password") && !diagnostic.Contains("Program.cs"),
+        "sanitized diagnostics omit credentials and source paths");
+}
+Console.WriteLine("EPG priority/cancellation, player settings and diagnostic privacy checks passed.");
+
 static void Check(bool condition, string name)
 {
     if (!condition) throw new Exception(name + " check failed");

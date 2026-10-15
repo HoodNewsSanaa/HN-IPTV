@@ -9,7 +9,13 @@
     <VlcWindowsArm64Enabled>false</VlcWindowsArm64Enabled>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../HN-IPTV/HN-IPTV.csproj" />
+    <ProjectReference Include="../HN-IPTV/HN-IPTV.csproj" Condition="'$(PublishedAppPath)' == ''" />
+    <Reference Include="HN-IPTV" HintPath="$(PublishedAppPath)/HN-IPTV.dll" Condition="'$(PublishedAppPath)' != ''" />
+    <Reference Include="HN-IPTV.Core" HintPath="$(PublishedAppPath)/HN-IPTV.Core.dll" Condition="'$(PublishedAppPath)' != ''" />
+    <Reference Include="LibVLCSharp" HintPath="$(PublishedAppPath)/LibVLCSharp.dll" Condition="'$(PublishedAppPath)' != '' and Exists('$(PublishedAppPath)/LibVLCSharp.dll')" />
+    <Content Include="$(PublishedAppPath)/**/*" Exclude="$(PublishedAppPath)/*.dll;$(PublishedAppPath)/*.exe;$(PublishedAppPath)/*.deps.json;$(PublishedAppPath)/*.runtimeconfig.json"
+             Link="%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Condition="'$(PublishedAppPath)' != ''" />
+    <Content Include="$(PublishedAppPath)/libmpv-2.dll" Link="libmpv-2.dll" CopyToOutputDirectory="PreserveNewest" Condition="'$(PublishedAppPath)' != '' and Exists('$(PublishedAppPath)/libmpv-2.dll')" />
     <Content Include="fixtures/**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

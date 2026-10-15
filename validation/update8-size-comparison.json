@@ -1,0 +1,32 @@
+{
+  "vlc": {
+    "units": "bytes",
+    "component_bytes": {
+      "app_and_notices": 1093401,
+      "dotnet_runtime": 137493528,
+      "vlc_x64": 111588790,
+      "mpv": 0,
+      "vlc_other_architectures": 0
+    },
+    "application_payload_bytes": 250175719,
+    "portable_zip_bytes": 110007015,
+    "installer_bytes": null,
+    "combined_package_payload_bytes": null,
+    "notes": "Application payload excludes generated uninstaller and user data. Combined payload excludes the small GitHub artifact wrapper and checksums."
+  },
+  "mpv": {
+    "units": "bytes",
+    "component_bytes": {
+      "app_and_notices": 853560,
+      "dotnet_runtime": 137493528,
+      "vlc_x64": 0,
+      "mpv": 121001472,
+      "vlc_other_architectures": 0
+    },
+    "application_payload_bytes": 259348560,
+    "portable_zip_bytes": null,
+    "installer_bytes": null,
+    "combined_package_payload_bytes": null,
+    "notes": "Application payload excludes generated uninstaller and user data. Combined payload excludes the small GitHub artifact wrapper and checksums."
+  }
+}

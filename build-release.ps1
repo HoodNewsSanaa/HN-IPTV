@@ -1,7 +1,14 @@
-param([switch]$PortableOnly, [switch]$FastStartup, [string]$Version = '0.7.1')
+param([switch]$PortableOnly, [switch]$FastStartup, [string]$Version = '0.8.0', [switch]$UseExistingPublish, [switch]$QuickCompression)
 $ErrorActionPreference = 'Stop'
-& (Join-Path $PSScriptRoot 'build-windows.ps1') -FastStartup:$FastStartup -Version $Version
+if (-not $UseExistingPublish) {
+    & (Join-Path $PSScriptRoot 'build-windows.ps1') -FastStartup:$FastStartup -Version $Version
+}
 $publish = Join-Path $PSScriptRoot 'artifacts/publish'
+$manifest = Get-Content (Join-Path $publish 'build-manifest.json') -Raw | ConvertFrom-Json
+if ($manifest.version -ne $Version -or $manifest.engine -ne 'vlc') { throw 'Expected a VLC publish with the requested release version.' }
+if ((Get-FileHash (Join-Path $publish 'HN-IPTV.dll') -Algorithm SHA256).Hash -ne $manifest.application_sha256) { throw 'Published assembly differs from its build manifest.' }
+if ($env:GITHUB_SHA -and $manifest.source_commit -ne $env:GITHUB_SHA) { throw 'Published source commit differs from this workflow.' }
+& (Join-Path $PSScriptRoot 'verify-package.ps1') -PublishDirectory $publish -Engine vlc
 $dist = Join-Path $PSScriptRoot 'dist'
 New-Item -ItemType Directory -Force $dist | Out-Null
 # Never include stale setup/checksums from a previous or portable-only build.
@@ -16,8 +23,12 @@ try {
     Copy-Item -LiteralPath $publish -Destination $folder -Recurse
     New-Item -ItemType File -Path (Join-Path $folder 'portable.mode') | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $folder 'data') | Out-Null
-    [IO.Compression.ZipFile]::CreateFromDirectory($folder, (Join-Path $dist 'HN-IPTV-Portable.zip'),
-        [IO.Compression.CompressionLevel]::SmallestSize, $true)
+    $compression = if ($QuickCompression) { [IO.Compression.CompressionLevel]::Fastest } else { [IO.Compression.CompressionLevel]::SmallestSize }
+    $stagedZip = Join-Path $dist ('.portable-' + [guid]::NewGuid().ToString('N') + '.zip')
+    try {
+        [IO.Compression.ZipFile]::CreateFromDirectory($folder, $stagedZip, $compression, $true)
+        [IO.File]::Move($stagedZip, (Join-Path $dist 'HN-IPTV-Portable.zip'), $true)
+    } finally { if (Test-Path $stagedZip) { Remove-Item -LiteralPath $stagedZip -Force } }
 } finally { if (Test-Path $temp) { Remove-Item -LiteralPath $temp -Recurse -Force } }
 if (-not $PortableOnly) {
     $command = Get-Command ISCC.exe -ErrorAction SilentlyContinue
@@ -25,7 +36,8 @@ if (-not $PortableOnly) {
         Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
     } else { '' }
     if (-not $iscc -or -not (Test-Path $iscc)) { throw 'Inno Setup 6 is required for the installer. The portable ZIP is available.' }
-    & $iscc "/DAppVersion=$Version" (Join-Path $PSScriptRoot 'installer/HN-IPTV.iss')
+    $compressionArguments = if ($QuickCompression) { @('/DQuickCompression') } else { @() }
+    & $iscc @compressionArguments "/DAppVersion=$Version" (Join-Path $PSScriptRoot 'installer/HN-IPTV.iss')
     if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
 }
 $names = @('HN-IPTV-Portable.zip')

@@ -34,6 +34,8 @@ internal static class Program
                 await UntilAsync(() => Task.FromResult(window.IsLoaded));
                 await (Task)typeof(MainWindow).GetField("_startupLoad", Private)!.GetValue(window)!;
                 results["window_ready_ms"] = clock.Elapsed.TotalMilliseconds;
+                results["engine"] = BuildInfo.Engine;
+                results["app_sha256"] = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(typeof(MainWindow).Assembly.Location))).ToLowerInvariant();
                 var channelList = (ListBox)typeof(MainWindow).GetField("ChannelsList", Private | BindingFlags.Public)!.GetValue(window)!;
                 var controller = (PlaybackController)typeof(MainWindow).GetField("_playback", Private)!.GetValue(window)!;
                 var kind = Enum.Parse(typeof(MainWindow).GetNestedType("SourceKind", BindingFlags.NonPublic)!, "M3u");
@@ -41,7 +43,7 @@ internal static class Program
                     new Channel { Id = "ts", Name = "TS fixture", GroupId = "test", GroupName = "Test", Command = server.Url + "segment00.ts" },
                     new Channel { Id = "hls", Name = "HLS fixture", GroupId = "test", GroupName = "Test", Command = server.Url + "fixture.m3u8" }
                 };
-                await (Task)Invoke(window, "SetChannelsAsync", channels, new[] { new ChannelGroup("test", "Test") }, kind, "Test", "test", false)!;
+                await (Task)Invoke(window, "SetChannelsAsync", channels, new[] { new ChannelGroup("test", "Test"), new ChannelGroup("empty", "Empty") }, kind, "Test", "test", false)!;
                 await UntilAsync(() => Task.FromResult(channelList.Items.Count == 2));
                 // Reproduce stale cancellation sources across an empty category,
                 // a no-guide channel, catalog replacement, and repeated Stop.
@@ -60,10 +62,28 @@ internal static class Program
                 if (tuneField.GetValue(window) is not null)
                     throw new InvalidOperationException("Stop retained a cancellation source.");
                 epgField.SetValue(window, new CancellationTokenSource());
-                await (Task)Invoke(window, "SetChannelsAsync", channels, new[] { new ChannelGroup("test", "Test") }, kind, "Test", "test", false)!;
+                await (Task)Invoke(window, "SetChannelsAsync", channels, new[] { new ChannelGroup("test", "Test"), new ChannelGroup("empty", "Empty") }, kind, "Test", "test", false)!;
                 await UntilAsync(() => Task.FromResult(channelList.Items.Count == 2));
                 await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
                 results["selection_cancellation_regression"] = true;
+                var groups = (ListBox)typeof(MainWindow).GetField("GroupsList", Private | BindingFlags.Public)!.GetValue(window)!;
+                for (int i = 0; i < 8; i++)
+                {
+                    groups.SelectedItem = groups.Items.Cast<ChannelGroup>().Single(g => g.Id == "empty");
+                    await UntilAsync(() => Task.FromResult(channelList.Items.Count == 0));
+                    groups.SelectedItem = groups.Items.Cast<ChannelGroup>().Single(g => g.Id == "test");
+                    await UntilAsync(() => Task.FromResult(channelList.Items.Count == 2));
+                }
+                results["empty_category_round_trips"] = 8;
+                int resets = 0;
+                var visible = (HnIptv.Navigation.BulkObservableCollection<Channel>)typeof(MainWindow).GetField("_visibleChannels", Private)!.GetValue(window)!;
+                visible.CollectionChanged += (_, _) => resets++;
+                channelList.SelectedIndex = 0;
+                var selectedChannel = (Channel)channelList.SelectedItem;
+                Invoke(window, "ToggleFavorite", selectedChannel); Invoke(window, "ToggleFavorite", selectedChannel);
+                await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+                if (resets != 0) throw new InvalidOperationException("Favorite toggle rebuilt an unchanged browser.");
+                results["favorites_preserved_browser"] = true;
                 channelList.SelectedIndex = 0;
                 await (Task)Invoke(window, "PlaySelectedAsync")!;
                 await UntilAsync(async () => (await controller.ProgressAsync()).Playing);
@@ -72,6 +92,38 @@ internal static class Program
                 await (Task)Invoke(window, "PlaySelectedAsync")!;
                 await UntilAsync(async () => (await controller.ProgressAsync()).Playing);
                 results["hls_started"] = true;
+                var tuneTimes = new List<double>();
+                for (int i = 0; i < 6; i++)
+                {
+                    channelList.SelectedIndex = i % 2;
+                    var tuneClock = Stopwatch.StartNew();
+                    await (Task)Invoke(window, "PlaySelectedAsync")!;
+                    await UntilAsync(async () => { var progress = await controller.ProgressAsync(); return progress.Playing && progress.Time > 0; });
+                    tuneTimes.Add(tuneClock.Elapsed.TotalMilliseconds);
+                }
+                results["time_to_progress_ms"] = tuneTimes; // Decoder progress, not proof of a rendered first frame.
+                var rapidTunes = new List<Task>();
+                for (int i = 0; i < 10; i++) { channelList.SelectedIndex = i % 2; rapidTunes.Add((Task)Invoke(window, "PlaySelectedAsync")!); }
+                await Task.WhenAll(rapidTunes);
+                await UntilAsync(async () => (await controller.ProgressAsync()).Playing);
+                results["rapid_tune_requests"] = 10;
+                var host = (NativeVideoHost)typeof(MainWindow).GetField("VideoView", Private | BindingFlags.Public)!.GetValue(window)!;
+                var originalHandle = host.VideoHandle;
+                for (int i = 0; i < 5; i++)
+                {
+                    Invoke(window, "TogglePictureInPicture");
+                    var pip = (PictureInPictureWindow?)typeof(MainWindow).GetField("_pip", Private)!.GetValue(window);
+                    if (pip == null) throw new InvalidOperationException("PiP failed to open.");
+                    window.WindowState = WindowState.Minimized;
+                    await Task.Delay(300);
+                    if (pip.WindowState == WindowState.Minimized || !pip.IsVisible || !(await controller.ProgressAsync()).Playing)
+                        throw new InvalidOperationException("PiP did not survive main-window minimize.");
+                    pip.Close(); window.WindowState = WindowState.Normal;
+                    await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+                    if (host.VideoHandle != originalHandle || !(await controller.ProgressAsync()).Playing)
+                        throw new InvalidOperationException("PiP replaced the video target or interrupted playback.");
+                }
+                results["pip_round_trips"] = 5;
                 var restoreTimes = new List<double>();
                 for (int i = 0; i < 10; i++)
                 {
@@ -92,6 +144,8 @@ internal static class Program
                 var after = await controller.ProgressAsync();
                 if (!after.Playing || after.Time <= before.Time) throw new InvalidOperationException("Playback did not advance across fullscreen.");
                 results["fullscreen_playback_advanced"] = true;
+                results["cpu_time_ms"] = Process.GetCurrentProcess().TotalProcessorTime.TotalMilliseconds;
+                results["private_bytes"] = Process.GetCurrentProcess().PrivateMemorySize64;
                 results["working_set_bytes"] = Process.GetCurrentProcess().WorkingSet64;
                 results["passed"] = true; exit = 0;
             }

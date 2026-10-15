@@ -25,3 +25,5 @@ artifacts/
 **/*.jks
 **/*signing-password*
 **/hn-iptv.db*
+native/
+**/player-settings.json*

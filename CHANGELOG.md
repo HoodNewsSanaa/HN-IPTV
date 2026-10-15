@@ -1,3 +1,19 @@
+# Update 8 / 0.8.0 — release candidate
+
+- Add a resizable, always-on-top picture-in-picture window with pause, mute, volume and Return controls. Reparent one persistent native video target so PiP does not reconnect the stream. Keep the main browser usable and PiP visible when the main window is minimized.
+- Save PiP bounds and playback buffer presets asynchronously and atomically in the existing installed/portable data folder.
+- Retain one channel view, skip unchanged result resets, avoid catalog work for favorites outside the Favorites group, and retain category scroll positions.
+- Cancel obsolete category preview/logo waits. Promote selected-channel EPG work ahead of queued previews without duplicating requests.
+- Add a brief cooldown for failed tune requests; explicit Play retries immediately. Existing obsolete-tune cancellation remains.
+- Record sanitized exception types, HRESULTs and application stack frames. Write a bounded fatal log when an asynchronous log flush may not complete.
+- Include a checksum-pinned mpv comparison backend. VLC remains the release default because Windows speed and stability are unverified here.
+- Publish the application once, compile the UI harness against that exact assembly, and package the same publish. Keep dependency caching and avoid recompressing package artifacts.
+- Use quicker compression for development builds and strong compression for release builds. Remove stale symbols and reject truncated PE files.
+- Keep the existing installer AppId/scope/data location, remember the old install directory, and test a previous-version installer registration fixture followed by upgrade/reinstall/uninstall.
+- Release downloads contain only the installer EXE and complete portable ZIP; SHA-256 checksums are generated and printed in release notes.
+
+No built-in updater, Android package, Stalker support, external EPG matching, or unrelated interface redesign is introduced. Earlier history follows.
+
 # Update 7 hotfix / 0.7.1
 
 - Fix the confirmed unhandled ObjectDisposedException in channel/category selection: clear cancellation-source fields before cancelling and disposing them.

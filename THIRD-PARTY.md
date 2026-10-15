@@ -8,3 +8,6 @@
 - The small HLS/MPEG-TS test fixtures are generated color patterns and a sine tone, produced with FFmpeg solely for regression testing. They contain no provider streams or account data and are excluded from application packages.
 
 No project-wide license was added or changed by this update.
+
+
+Optional mpv comparison source is included, but its binary is not distributed with the normal release. The bootstrap source/digests and distribution considerations are documented in ENGINE-COMPARISON.md.
