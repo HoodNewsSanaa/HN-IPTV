@@ -36,7 +36,8 @@ if (-not $PortableOnly) {
         Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
     } else { '' }
     if (-not $iscc -or -not (Test-Path $iscc)) { throw 'Inno Setup 6 is required for the installer. The portable ZIP is available.' }
-    $compressionArguments = if ($QuickCompression) { @('/DQuickCompression') } else { @() }
+    [string[]]$compressionArguments = @()
+    if ($QuickCompression) { $compressionArguments += '/DQuickCompression' }
     & $iscc @compressionArguments "/DAppVersion=$Version" (Join-Path $PSScriptRoot 'installer/HN-IPTV.iss')
     if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
 }
