@@ -1,3 +1,11 @@
+# Update 7 hotfix / 0.7.1
+
+- Fix the confirmed unhandled ObjectDisposedException in channel/category selection: clear cancellation-source fields before cancelling and disposing them.
+- Apply the same ownership fix to catalog replacement, repeated Stop, subsequent tuning, and window shutdown.
+- Ignore channel-selection events during shutdown.
+- Add Windows UI regressions for selection through an empty list/no-guide channel, catalog replacement and repeated Stop. Existing playback and installer checks remain enabled.
+- Keep existing saved data, IPTV features, and Windows-only packaging.
+
 # Update 7 / 0.7.0
 
 - Serialize VLC initialization, stop, tune, pause, volume and shutdown on workers. Cancel obsolete tune requests; retain one native video HWND across minimize/restore and fullscreen layout changes.

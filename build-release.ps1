@@ -1,4 +1,4 @@
-param([switch]$PortableOnly, [switch]$FastStartup, [string]$Version = '0.7.0')
+param([switch]$PortableOnly, [switch]$FastStartup, [string]$Version = '0.7.1')
 $ErrorActionPreference = 'Stop'
 & (Join-Path $PSScriptRoot 'build-windows.ps1') -FastStartup:$FastStartup -Version $Version
 $publish = Join-Path $PSScriptRoot 'artifacts/publish'

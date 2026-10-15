@@ -228,8 +228,8 @@ public partial class MainWindow : Window
         _catalogReady = false;
         try
         {
-            _epgCts?.Cancel(); _epgCts?.Dispose();
-            _tuneCts?.Cancel(); _tuneCts?.Dispose();
+            CancelAndClear(ref _epgCts);
+            CancelAndClear(ref _tuneCts);
             _previewCts.Cancel();
             _previewCts.Dispose();
             _previewCts = new CancellationTokenSource();
@@ -587,10 +587,21 @@ public partial class MainWindow : Window
     }
     private void ChannelItem_TouchUp(object sender, TouchEventArgs e) => EndHold();
 
+    // Clear ownership before cancellation: empty categories and repeated Stop events
+    // can return without creating a replacement source.
+    private static void CancelAndClear(ref CancellationTokenSource? source)
+    {
+        var previous = source;
+        source = null;
+        if (previous is null) return;
+        try { previous.Cancel(); }
+        finally { previous.Dispose(); }
+    }
+
     private async void ChannelsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_loadingCatalog) return;
-        _epgCts?.Cancel(); _epgCts?.Dispose();
+        if (_closing || _loadingCatalog) return;
+        CancelAndClear(ref _epgCts);
         _programs.Clear();
         if (ChannelsList.SelectedItem is not Channel channel)
         {
@@ -633,7 +644,7 @@ public partial class MainWindow : Window
     private async Task PlaySelectedAsync()
     {
         if (_closing || _loadingCatalog || ChannelsList.SelectedItem is not Channel channel) return;
-        _tuneCts?.Cancel(); _tuneCts?.Dispose();
+        CancelAndClear(ref _tuneCts);
         var cts = new CancellationTokenSource();
         _tuneCts = cts;
         try
@@ -674,7 +685,7 @@ public partial class MainWindow : Window
     }
     private async void Stop_Click(object sender, RoutedEventArgs e)
     {
-        _tuneCts?.Cancel(); _tuneCts?.Dispose();
+        CancelAndClear(ref _tuneCts);
         await StopPlaybackAsync();
         if (!_closing) SetStatus("Playback stopped.");
     }
@@ -1073,7 +1084,7 @@ public partial class MainWindow : Window
         TopBar.IsEnabled = false;
         _epgClock.Stop(); _refreshTimer.Stop(); _saveSelectionDebounce.Stop();
         _searchDebounce.Stop(); _rowDebounce.Stop(); EndHold();
-        _libraryCts.Cancel(); _epgCts?.Cancel(); _tuneCts?.Cancel(); _tuneCts?.Dispose();
+        _libraryCts.Cancel(); CancelAndClear(ref _epgCts); CancelAndClear(ref _tuneCts);
         _previewCts.Cancel(); _filterCts.Cancel();
         try
         {

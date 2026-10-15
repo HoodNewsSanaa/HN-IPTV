@@ -43,6 +43,27 @@ internal static class Program
                 };
                 await (Task)Invoke(window, "SetChannelsAsync", channels, new[] { new ChannelGroup("test", "Test") }, kind, "Test", "test", false)!;
                 await UntilAsync(() => Task.FromResult(channelList.Items.Count == 2));
+                // Reproduce stale cancellation sources across an empty category,
+                // a no-guide channel, catalog replacement, and repeated Stop.
+                var epgField = typeof(MainWindow).GetField("_epgCts", Private)!;
+                epgField.SetValue(window, new CancellationTokenSource());
+                channelList.SelectedIndex = -1;
+                channelList.SelectedIndex = 0;
+                await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+                if (epgField.GetValue(window) is not null)
+                    throw new InvalidOperationException("No-guide selection retained a cancellation source.");
+                var tuneField = typeof(MainWindow).GetField("_tuneCts", Private)!;
+                tuneField.SetValue(window, new CancellationTokenSource());
+                Invoke(window, "Stop_Click", window, new RoutedEventArgs());
+                Invoke(window, "Stop_Click", window, new RoutedEventArgs());
+                await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+                if (tuneField.GetValue(window) is not null)
+                    throw new InvalidOperationException("Stop retained a cancellation source.");
+                epgField.SetValue(window, new CancellationTokenSource());
+                await (Task)Invoke(window, "SetChannelsAsync", channels, new[] { new ChannelGroup("test", "Test") }, kind, "Test", "test", false)!;
+                await UntilAsync(() => Task.FromResult(channelList.Items.Count == 2));
+                await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+                results["selection_cancellation_regression"] = true;
                 channelList.SelectedIndex = 0;
                 await (Task)Invoke(window, "PlaySelectedAsync")!;
                 await UntilAsync(async () => (await controller.ProgressAsync()).Playing);

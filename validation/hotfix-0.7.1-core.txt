@@ -1,0 +1,3 @@
+Shared Core and mocked Xtream API smoke checks passed.
+Encrypted playlist-library checks passed.
+Portable, atomic persistence, cancellation, large-catalog and save-queue checks passed.
