@@ -1,0 +1,62 @@
+<Window x:Class="HnIptv.XtreamDialog" Icon="Assets/HN-IPTV.ico"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Connect Xtream Codes" Width="510" Height="550" MinWidth="430" MinHeight="350"
+        ResizeMode="CanResize" WindowStartupLocation="CenterOwner"
+        Background="#101827" Foreground="White">
+    <!-- Keep actions outside the scrollable form: buttons must remain accessible at high DPI. -->
+    <Grid Margin="27">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled" Margin="0,0,0,14">
+            <StackPanel>
+                <TextBlock Text="CONNECT XTREAM CODES" Foreground="#44C1EA"
+                           FontSize="19" FontWeight="Bold" Margin="0,0,0,7"/>
+                <TextBlock Text="Sign in using your provider's server URL, username and password. Use an authorized subscription."
+                           Foreground="#ABB8CB" TextWrapping="Wrap" Margin="0,0,0,18"/>
+
+                <StackPanel Margin="0,0,0,13">
+                    <TextBlock Text="Server URL (including port, if applicable)" Foreground="#AABBD0" Margin="0,0,0,5"/>
+                    <TextBox x:Name="ServerBox" Height="35" Padding="9,6"
+                             Background="#223147" Foreground="White" BorderThickness="0"
+                             ToolTip="Example: https://provider.example:8080"/>
+                </StackPanel>
+                <StackPanel Margin="0,0,0,13">
+                    <TextBlock Text="Username" Foreground="#AABBD0" Margin="0,0,0,5"/>
+                    <TextBox x:Name="UsernameBox" Height="35" Padding="9,6"
+                             Background="#223147" Foreground="White" BorderThickness="0"/>
+                </StackPanel>
+                <StackPanel Margin="0,0,0,13">
+                    <TextBlock Text="Password" Foreground="#AABBD0" Margin="0,0,0,5"/>
+                    <PasswordBox x:Name="PasswordBox" Height="35" Padding="9,6"
+                                 Background="#223147" Foreground="White" BorderThickness="0"/>
+                </StackPanel>
+                <StackPanel Margin="0,0,0,14">
+                    <TextBlock Text="Live stream format" Foreground="#AABBD0" Margin="0,0,0,5"/>
+                    <ComboBox x:Name="FormatBox" SelectedIndex="0" Height="34"
+                              Background="#223147" Foreground="Black">
+                        <ComboBoxItem Content="Automatic (provider-supported)"/>
+                        <ComboBoxItem Content="MPEG-TS (.ts)"/>
+                        <ComboBoxItem Content="HLS (.m3u8)"/>
+                    </ComboBox>
+                </StackPanel>
+                <TextBlock Foreground="#8B9BAE" TextWrapping="Wrap"
+                           Text="Account details are held only in memory for this session; use HTTPS whenever your provider supports it."/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Row="1" BorderBrush="#29394E" BorderThickness="0,1,0,0"
+                Padding="0,14,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Cancel" Width="87" Margin="0,0,10,0"
+                        Click="Cancel_Click" IsCancel="True"/>
+                <Button Content="Add Playlist" Background="#147CA2" Width="132"
+                        Click="Connect_Click" IsDefault="True"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

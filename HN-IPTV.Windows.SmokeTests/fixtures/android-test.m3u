@@ -1,0 +1,5 @@
+#EXTM3U
+#EXTINF:-1 tvg-id="fixture-hls" group-title="Test",HLS fixture
+http://10.0.2.2:8765/fixture.m3u8
+#EXTINF:-1 tvg-id="fixture-ts" group-title="Test",MPEG-TS fixture
+http://10.0.2.2:8765/segment00.ts

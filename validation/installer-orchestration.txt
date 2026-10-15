@@ -1,0 +1,8 @@
+Passed: success-delayed-cleanup
+Passed: uninstall-fail
+Passed: reinstall-and-cleanup-fail
+Passed: cleanup-timeout
+Passed: install-timeout
+Passed: existing-data
+Passed: existing-install
+Installer orchestration regressions passed (simulated processes/registry; not a Windows installation test).

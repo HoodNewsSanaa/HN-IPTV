@@ -1,0 +1,125 @@
+name: Windows builds and releases
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  release:
+    types: [published]
+permissions:
+  contents: read
+concurrency:
+  group: windows-${{ github.event.release.tag_name || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    outputs:
+      version: ${{ steps.version.outputs.number }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+      - name: Validate release version
+        id: version
+        shell: pwsh
+        env:
+          BUILD_REF: ${{ github.event.release.tag_name || github.ref_name }}
+          IS_TAG: ${{ github.ref_type == 'tag' || github.event_name == 'release' }}
+        run: |
+          $version = '0.7.0'
+          if ($env:IS_TAG -eq 'true') {
+            if ($env:BUILD_REF -notmatch '^v(\d+\.\d+\.\d+)$') { throw 'Use a version tag such as v0.7.0.' }
+            $version = $Matches[1]
+          }
+          "number=$version" >> $env:GITHUB_OUTPUT
+      - name: Restore
+        shell: pwsh
+        run: |
+          dotnet restore HN-IPTV/HN-IPTV.csproj -r win-x64
+          if ($LASTEXITCODE -ne 0) { throw 'Application restore failed.' }
+          dotnet restore HN-IPTV.Core.SmokeTests/HN-IPTV.Core.SmokeTests.csproj
+          if ($LASTEXITCODE -ne 0) { throw 'Test restore failed.' }
+      - name: Core regression tests and XAML checks
+        shell: pwsh
+        run: ./test-core.ps1
+      - name: Installer test orchestration regressions
+        shell: pwsh
+        run: ./test-installer-control-flow.ps1
+      - name: Windows playback, minimize/restore, fullscreen and startup checks
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          dotnet run --project HN-IPTV.Windows.SmokeTests -c Release -r win-x64 --self-contained true -- artifacts/windows-smoke.json
+          if ($LASTEXITCODE -ne 0) { throw 'Windows playback/UI checks failed; inspect the test report.' }
+      - name: Synthetic 50,000-channel benchmarks
+        shell: pwsh
+        run: |
+          dotnet run --project HN-IPTV.Core.Benchmarks -c Release -- 50000 | Set-Content artifacts/core-benchmark.json
+          if ($LASTEXITCODE -ne 0) { throw 'Benchmark failed.' }
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
+      - name: Build clean installer and portable ZIP
+        shell: pwsh
+        run: ./build-release.ps1 -Version '${{ steps.version.outputs.number }}'
+      - name: Installer reinstall and silent-uninstall data preservation
+        shell: pwsh
+        run: ./test-installer.ps1
+      - name: Upload release packages only
+        uses: actions/upload-artifact@v4
+        with:
+          name: HN-IPTV-Windows-${{ steps.version.outputs.number }}
+          path: |
+            dist/HN-IPTV-Setup.exe
+            dist/HN-IPTV-Portable.zip
+            dist/SHA256SUMS.txt
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload measurement reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: HN-IPTV-validation-${{ steps.version.outputs.number }}
+          path: |
+            artifacts/windows-smoke.json
+            artifacts/core-benchmark.json
+            artifacts/size-report.json
+            artifacts/installer-test/**
+          if-no-files-found: warn
+          retention-days: 30
+  publish:
+    needs: build-windows
+    if: github.event_name == 'release' || (github.event_name != 'pull_request' && startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: HN-IPTV-Windows-${{ needs.build-windows.outputs.version }}
+          path: dist
+      - name: Create versioned release or attach assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: v${{ needs.build-windows.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/HN-IPTV-Setup.exe dist/HN-IPTV-Portable.zip dist/SHA256SUMS.txt --clobber
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --title "HN-IPTV $RELEASE_TAG" --generate-notes dist/HN-IPTV-Setup.exe dist/HN-IPTV-Portable.zip dist/SHA256SUMS.txt
+          fi

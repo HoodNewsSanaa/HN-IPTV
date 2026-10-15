@@ -1,0 +1,234 @@
+using System.Net;
+using System.Text;
+using HnIptv.Models;
+using HnIptv.Navigation;
+using HnIptv.Services;
+using HnIptv.Preferences;
+
+var playlist = "#EXTM3U\n#EXTINF:-1 tvg-logo=\"https://example.test/icon.png\" group-title=\"News\",World One\nhttps://example.test/stream.m3u8";
+var parsed = M3uService.Parse(playlist);
+Check(parsed.Count == 1 && parsed[0].GroupName == "News" &&
+    parsed[0].Command == "https://example.test/stream.m3u8", "M3U parser");
+Check(ChannelCatalog.Includes(parsed[0], "News", "world") &&
+    !ChannelCatalog.Includes(parsed[0], "Sports", null), "channel filtering");
+// Channel visibility is UI-independent and persists per provider.
+var testChannel = parsed[0];
+Check(testChannel.IsVisible, "default channel visibility");
+testChannel.IsFavorite = true;
+testChannel.IsVisible = false;
+Check(!ChannelCatalog.Includes(testChannel, "*", null), "hidden channel filtering");
+var prefsPath = Path.Combine(Path.GetTempPath(), "lumatv-test-" + Guid.NewGuid() + ".json");
+var key = ChannelPreferences.ProviderKey("m3u", "test-playlist");
+try
+{
+    new ChannelPreferences(prefsPath).Save(key, parsed);
+    var fresh = M3uService.Parse(playlist);
+    var reloadedPreferences = new ChannelPreferences(prefsPath);
+    reloadedPreferences.Load();
+    reloadedPreferences.Apply(key, fresh);
+    Check(fresh[0].IsFavorite && fresh[0].IsVisible, "favorites preserved and obsolete channel hiding cleared");
+    Check(ChannelPreferences.ProviderKey("m3u", "test-playlist") !=
+          ChannelPreferences.ProviderKey("m3u", "other-playlist"), "provider isolation");
+    var now = new DateTimeOffset(2026, 10, 14, 17, 30, 0, TimeSpan.Zero);
+    fresh[0].SetEpgPreview([new ProgramEntry("News Hour", "", now.AddMinutes(-30), now.AddMinutes(30))], now);
+    Check(fresh[0].EpgPreview == "Now: News Hour" && Math.Abs(fresh[0].EpgProgress - 50) < 0.01,
+        "inline EPG current program and progress");
+    fresh[0].SetEpgPreview([], now);
+    Check(fresh[0].EpgPreview == "No EPG information" && fresh[0].EpgProgress == 0,
+        "missing EPG fallback");
+}
+finally { if (File.Exists(prefsPath)) File.Delete(prefsPath); }
+
+var seen = new List<Uri>();
+using var http = new HttpClient(new FakeXtreamHandler(uri =>
+{
+    seen.Add(uri);
+    var query = uri.Query;
+    if (!query.Contains("username=user%2Bname", StringComparison.OrdinalIgnoreCase) ||
+        !query.Contains("password=p%40ss%26word", StringComparison.OrdinalIgnoreCase))
+        throw new Exception("Xtream credentials were not correctly URL-escaped.");
+    if (query.Contains("action=get_live_categories"))
+        return """[{"category_id":"10","category_name":"News"},{"category_id":20,"category_name":"Sports"}]""";
+    if (query.Contains("action=get_live_streams"))
+        return """[{"stream_id":15,"name":"World News","num":6,"stream_icon":"https://example.test/news.png","category_id":"10"},{"stream_id":"22","name":"Stadium","category_id":"20"}]""";
+    if (query.Contains("action=get_short_epg"))
+        return """{"epg_listings":[{"title":"VGVzdCBTaG93","description":"TGl2ZSB0ZXN0","start_timestamp":"1735000000","stop_timestamp":"1735003600"}]}""";
+    return """{"user_info":{"auth":1,"status":"Active","allowed_output_formats":["ts","m3u8"]}}""";
+}));
+using (var xtream = new XtreamClient("https://tv.example.test:8443/subscription/player_api.php?ignored=1",
+    "user+name", "p@ss&word", XtreamStreamFormat.Hls, http))
+{
+    await xtream.ConnectAsync();
+    Check(xtream.SelectedFormat == "HLS (.m3u8)", "Xtream stream format");
+    var data = await xtream.GetLiveTvAsync();
+    Check(data.Channels.Count == 2 && data.Groups.Count == 2, "Xtream live categories/streams");
+    // GetLiveTvAsync deliberately sorts by channel number, not by API response order.
+    // Resolve the fixture channel by its stable Xtream stream ID instead of list index.
+    var worldNews = data.Channels.Single(ch => ch.Id == "15");
+    Check(worldNews.Number == 6 && worldNews.GroupName == "News" &&
+        worldNews.Name == "World News", "Xtream channel mapping");
+    Check(data.Channels[0].Number <= data.Channels[1].Number, "Xtream channel-number sorting");
+    Check(worldNews.Command == "", "Credentials must not be embedded in channel models");
+    var stream = xtream.ResolveLiveStream(worldNews);
+    Check(stream.AbsoluteUri == "https://tv.example.test:8443/subscription/live/user%2Bname/p%40ss%26word/15.m3u8",
+        "Xtream stream URL construction");
+    var epg = await xtream.GetEpgAsync(worldNews.Id);
+    Check(epg.Count == 1 && epg[0].Title == "Test Show" && epg[0].Description == "Live test" &&
+        epg[0].Start is not null && epg[0].End is not null, "Xtream EPG/base64");
+}
+Check(seen.Count == 4, "Xtream request count");
+
+using var badHttp = new HttpClient(new FakeXtreamHandler(_ => """{"user_info":{"auth":0,"status":"Expired"}}"""));
+using (var badAccount = new XtreamClient("http://tv.example.test:8080", "user", "bad", httpClient: badHttp))
+{
+    bool rejected = false;
+    try { await badAccount.ConnectAsync(); }
+    catch (UnauthorizedAccessException) { rejected = true; }
+    Check(rejected, "Xtream authentication failure handling");
+}
+
+using var hlsOnlyHttp = new HttpClient(new FakeXtreamHandler(_ =>
+    """{"user_info":{"auth":1,"status":"Active","allowed_output_formats":["m3u8"]}}"""));
+using (var automatic = new XtreamClient("https://tv.example.test", "user", "secret", httpClient: hlsOnlyHttp))
+{
+    await automatic.ConnectAsync();
+    Check(automatic.SelectedFormat == "HLS (.m3u8)", "Xtream automatic HLS fallback");
+}
+using (var disallowed = new XtreamClient("https://tv.example.test", "user", "secret",
+    XtreamStreamFormat.MpegTs, hlsOnlyHttp))
+{
+    bool rejected = false;
+    try { await disallowed.ConnectAsync(); }
+    catch (InvalidOperationException) { rejected = true; }
+    Check(rejected, "Xtream disallowed output format");
+}
+
+var largeXtreamJson = "[" + string.Join(',', Enumerable.Range(1, 50000).Select(i =>
+    $"{{\"stream_id\":{i},\"name\":\"Channel {i}\",\"num\":{50001 - i},\"category_id\":\"g{i % 100}\"}}")) + "]";
+using (var largeHttp = new HttpClient(new FakeXtreamHandler(uri => uri.Query.Contains("get_live_streams") ? largeXtreamJson :
+    uri.Query.Contains("get_live_categories") ? "[]" : """{"user_info":{"auth":1,"status":"Active"}}""")))
+using (var largeClient = new XtreamClient("https://example.test", "fixture-user", "fixture-password", httpClient: largeHttp))
+{
+    await largeClient.ConnectAsync();
+    var large = await largeClient.GetLiveTvAsync();
+    Check(large.Channels.Count == 50000 && large.Groups.Count == 100 && large.Channels[0].Id == "50000", "50,000 channel Xtream mapping and sorting");
+    using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+    bool stopped = false;
+    try { await largeClient.GetLiveTvAsync(cancelled.Token); } catch (OperationCanceledException) { stopped = true; }
+    Check(stopped, "Xtream cancellation");
+}
+
+Console.WriteLine("Shared Core and mocked Xtream API smoke checks passed.");
+
+// Encrypted library persistence remains supported without external EPG matching.
+var vaultPath = Path.Combine(Path.GetTempPath(), "lumatv-vault-" + Guid.NewGuid() + ".dpapi");
+try
+{
+    // Fake reversible protector is for Core tests only; Windows uses actual DPAPI.
+    var vault = new PlaylistLibrary(vaultPath, new TestProtector());
+    vault.Playlists.Add(new PlaylistProfile { Name = "Private", Type = "xtream", Password = "unique-test-secret",
+        CachedChannels = [new Channel { Id = "9", Name = "Test", GroupName = "Group", GroupId = "g" }] });
+    vault.SelectedId = vault.Playlists[0].Id;
+    var stableSnapshot = vault.CaptureSnapshot();
+    vault.Playlists[0].Name = "Changed after snapshot";
+    vault.SaveSnapshot(stableSnapshot);
+    Check(!File.ReadAllText(vaultPath).Contains("unique-test-secret"), "no plaintext credentials in vault");
+    var reloaded = new PlaylistLibrary(vaultPath, new TestProtector());
+    reloaded.Load();
+    Check(reloaded.SelectedId == vault.SelectedId &&
+        reloaded.Playlists[0].Name == "Private" &&
+        reloaded.Playlists[0].Password == "unique-test-secret" &&
+        reloaded.Playlists[0].CachedChannels.Count == 1, "playlist restore roundtrip");
+}
+finally { if (File.Exists(vaultPath)) File.Delete(vaultPath); }
+Console.WriteLine("Encrypted playlist-library checks passed.");
+
+
+// Portable storage requires no password and can be moved with its relative paths.
+var directory = Path.Combine(Path.GetTempPath(), "hn-iptv-tests-" + Guid.NewGuid());
+Directory.CreateDirectory(directory);
+try
+{
+    var path = Path.Combine(directory, "saved-playlists.json");
+    var portable = new PlaylistLibrary(path);
+    var profile = new PlaylistProfile { Name = "Portable", Password = "fixture-secret", LocalPath = "playlists/example.m3u",
+        CachedChannels = parsed.ToList(), HiddenGroupIds = ["hidden"], SelectedGroupId = "News" };
+    portable.Playlists.Add(profile); portable.SelectedId = profile.Id;
+    portable.Save();
+    var moved = Path.Combine(directory, "moved.json");
+    File.Copy(path, moved);
+    var restored = new PlaylistLibrary(moved); restored.Load();
+    Check(restored.Playlists[0].Password == "fixture-secret" && restored.Playlists[0].LocalPath == "playlists/example.m3u" &&
+        restored.SelectedId == profile.Id && restored.Playlists[0].HiddenGroupIds.Contains("hidden"), "password-free portable roundtrip");
+    profile.Name = "New name"; portable.Save();
+    var backup = new PlaylistLibrary(path + ".bak"); backup.Load();
+    Check(backup.Playlists[0].Name == "Portable", "last good backup");
+    var before = File.ReadAllBytes(path);
+    try { AtomicFile.Write(path, stream => { stream.WriteByte(42); throw new IOException("fixture failure"); }); }
+    catch (IOException) { }
+    Check(File.ReadAllBytes(path).SequenceEqual(before), "failed save preserves original");
+    File.WriteAllText(moved, "broken");
+    bool failed = false;
+    try { new PlaylistLibrary(moved).Load(); } catch (System.Text.Json.JsonException) { failed = true; }
+    Check(failed && File.ReadAllText(moved) == "broken", "corrupt file is not silently discarded");
+
+    var tricky = M3uService.Parse("#EXTM3U\n#EXTINF:-1 group-title=\"News, World\" tvg-id=\"first\" tvg-id=\"last\",A, B\nhttps://example.test/a.ts");
+    Check(tricky.Count == 1 && tricky[0].Name == "A, B" && tricky[0].GroupName == "News, World" && tricky[0].EpgId == "last", "quoted commas and duplicate attributes");
+    using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+    bool cancelledParse = false;
+    try { M3uService.Parse(playlist, cancelled.Token); } catch (OperationCanceledException) { cancelledParse = true; }
+    Check(cancelledParse, "M3U cancellation");
+    var builder = new StringBuilder("#EXTM3U\n");
+    for (int i = 0; i < 50000; i++) builder.AppendLine($"#EXTINF:-1 group-title=\"G{i % 100}\",Channel {i}\nhttps://example.test/{i}.ts");
+    string largeFile = Path.Combine(directory, "large.m3u"); File.WriteAllText(largeFile, builder.ToString());
+    var large = await M3uService.ParseFileAsync(largeFile);
+    var index = new ChannelIndex(large);
+    Check(large.Count == 50000 && index.Filter("G1", "", new HashSet<string>()).Count == 500, "50,000 channel file and group index");
+    large[1].IsFavorite = true;
+    Check(index.Filter("fav", "channel 1", new HashSet<string>()).Count == 1 &&
+        index.Filter("fav", "", new HashSet<string> { "G1" }).Count == 0, "favorites, search and hidden group combined");
+    using var entered = new ManualResetEventSlim(); using var release = new ManualResetEventSlim();
+    var writes = new List<string>();
+    var queue = new LatestSaveQueue<string>(value =>
+    { if (value == "first") { entered.Set(); release.Wait(TimeSpan.FromSeconds(10)); } lock(writes) writes.Add(value); });
+    queue.Enqueue("first");
+    Check(entered.Wait(TimeSpan.FromSeconds(10)), "save worker started");
+    for (int i = 0; i < 1000; i++) queue.Enqueue(i.ToString());
+    release.Set(); await queue.FlushAsync();
+    Check(writes.SequenceEqual(new[] { "first", "999" }), "save queue bounded and newest snapshot wins");
+    queue.Enqueue("next"); await queue.FlushAsync();
+    Check(writes.Last() == "next", "save queue restarts after flush");
+    bool failWrite = true;
+    var failing = new LatestSaveQueue<string>(_ => { if (failWrite) throw new IOException(); });
+    failing.Enqueue("failure");
+    bool observed = false;
+    try { await failing.FlushAsync(); } catch (IOException) { observed = true; }
+    Check(observed, "save errors reach close/flush");
+    failWrite = false; failing.Enqueue("retry"); await failing.FlushAsync();
+}
+finally { Directory.Delete(directory, recursive: true); }
+Console.WriteLine("Portable, atomic persistence, cancellation, large-catalog and save-queue checks passed.");
+
+static void Check(bool condition, string name)
+{
+    if (!condition) throw new Exception(name + " check failed");
+}
+
+sealed class FakeXtreamHandler(Func<Uri, string> responder) : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(responder(request.RequestUri!), Encoding.UTF8, "application/json")
+        };
+        return Task.FromResult(response);
+    }
+}
+
+
+sealed class TestProtector : IPlaylistProtector
+{
+    public byte[] Protect(byte[] data) => Convert.ToBase64String(data).Select(c => (byte)c).ToArray();
+    public byte[] Unprotect(byte[] data) => Convert.FromBase64String(Encoding.ASCII.GetString(data));
+}

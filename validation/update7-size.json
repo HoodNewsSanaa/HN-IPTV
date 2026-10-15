@@ -1,0 +1,14 @@
+{
+  "units": "bytes",
+  "component_bytes": {
+    "app_and_notices": 1074379,
+    "dotnet_runtime": 136412040,
+    "vlc_x64": 111588790,
+    "vlc_other_architectures": 0
+  },
+  "application_payload_bytes": 249075209,
+  "portable_zip_bytes": 109555344,
+  "installer_bytes": null,
+  "combined_package_payload_bytes": null,
+  "notes": "Application payload excludes generated uninstaller and user data. Combined payload excludes the small GitHub artifact wrapper and checksums."
+}
