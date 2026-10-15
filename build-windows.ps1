@@ -5,7 +5,8 @@ if ($Engine -eq 'mpv') { & (Join-Path $PSScriptRoot 'prepare-mpv.ps1') }
 $publish = Join-Path $PSScriptRoot 'artifacts/publish'
 if (Test-Path $publish) { Remove-Item -LiteralPath $publish -Recurse -Force }
 $readyToRun = if ($FastStartup) { 'true' } else { 'false' }
-$restoreArguments = if ($NoRestore) { @('--no-restore') } else { @() }
+[string[]]$restoreArguments = @()
+if ($NoRestore) { $restoreArguments += '--no-restore' }
 & dotnet publish (Join-Path $PSScriptRoot 'HN-IPTV/HN-IPTV.csproj') -c Release -r win-x64 --self-contained true `
     -p:PublishSingleFile=false -p:PublishTrimmed=false "-p:PublishReadyToRun=$readyToRun" `
     "-p:Version=$Version" "-p:PlaybackEngine=$Engine" @restoreArguments -p:DebugType=none -p:DebugSymbols=false -p:CopyOutputSymbolsToPublishDirectory=false -o $publish
