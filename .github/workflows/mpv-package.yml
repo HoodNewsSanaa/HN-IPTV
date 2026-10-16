@@ -1,0 +1,71 @@
+name: Package mpv evaluation build
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/mpv-package.yml
+permissions:
+  contents: read
+jobs:
+  package-mpv:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-mpv-package-${{ hashFiles('**/*.csproj') }}
+      - name: Core checks
+        shell: pwsh
+        run: ./test-core.ps1
+      - name: Publish mpv application
+        shell: pwsh
+        run: ./build-windows.ps1 -Engine mpv -Version 0.9.1
+      - name: Test playback, shortcuts, single-click and PiP
+        shell: pwsh
+        run: ./test-windows.ps1
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe")) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
+          }
+      - name: Package tested mpv publish
+        shell: pwsh
+        run: ./build-release.ps1 -UseExistingPublish -Engine mpv -Version 0.9.1 -QuickCompression
+      - name: Verify installer and saved data
+        shell: pwsh
+        run: |
+          ./build-upgrade-fixture.ps1
+          ./test-installer.ps1 -PreviousSetup ./artifacts/upgrade-fixture/HN-IPTV-Previous-Setup.exe -ExpectedVersion 0.9.1
+      - name: Label mpv downloads
+        shell: pwsh
+        run: |
+          Move-Item dist/HN-IPTV-Setup.exe dist/HN-IPTV-mpv-Setup.exe
+          Move-Item dist/HN-IPTV-Portable.zip dist/HN-IPTV-mpv-Portable.zip
+          @('HN-IPTV-mpv-Setup.exe','HN-IPTV-mpv-Portable.zip') | ForEach-Object {
+            '{0}  {1}' -f (Get-FileHash "dist/$_" -Algorithm SHA256).Hash.ToLowerInvariant(), $_
+          } | Set-Content dist/SHA256SUMS.txt -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HN-IPTV-mpv-0.9.1
+          path: |
+            dist/HN-IPTV-mpv-Setup.exe
+            dist/HN-IPTV-mpv-Portable.zip
+            dist/SHA256SUMS.txt
+          compression-level: 0
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: HN-IPTV-mpv-validation
+          path: |
+            artifacts/windows-smoke.json
+            artifacts/size-report.json
+            artifacts/installer-test/**
+          if-no-files-found: warn

@@ -1,6 +1,9 @@
 #ifndef AppVersion
   #define AppVersion "0.9.0"
 #endif
+#ifndef PlaybackEngine
+  #define PlaybackEngine "vlc"
+#endif
 [Setup]
 AppId={{CD93EEDF-5518-4324-92BD-06600458F64C}
 AppName=HN-IPTV
@@ -37,6 +40,13 @@ VersionInfoDescription=HN-IPTV Windows installer
 Source: "..\artifacts\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [InstallDelete]
+#if PlaybackEngine == "mpv"
+Type: filesandordirs; Name: "{app}\libvlc"
+Type: files; Name: "{app}\LibVLCSharp.dll"
+#else
+Type: files; Name: "{app}\libmpv-2.dll"
+#endif
+
 ; Remove architectures shipped by Update 6 during an in-place upgrade.
 Type: filesandordirs; Name: "{app}\libvlc\win-x86"
 Type: filesandordirs; Name: "{app}\libvlc\win-arm64"

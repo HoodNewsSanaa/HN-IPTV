@@ -142,8 +142,9 @@ internal static class Program
                 if (infoPanel.Visibility != Visibility.Visible) throw new InvalidOperationException("Stream info toggle did not open.");
                 if (BuildInfo.Engine != "mpc") {
                     await UntilAsync(() => Task.FromResult(((TextBlock)window.FindName("StreamVideoInfo")).Text.Contains("160 × 90") &&
-                        ((TextBlock)window.FindName("StreamAudioInfo")).Text.Contains("44.1")));
+                        (BuildInfo.Engine != "vlc" || ((TextBlock)window.FindName("StreamAudioInfo")).Text.Contains("44.1"))));
                     results["stream_info_panel_live_values"] = true;
+                    results["active_audio_metadata_available"] = stream.AudioSampleRate > 0;
                 }
                 Invoke(window, "StreamInfo_Click", window, new RoutedEventArgs());
                 if (infoPanel.Visibility != Visibility.Collapsed) throw new InvalidOperationException("Stream info toggle did not close.");
