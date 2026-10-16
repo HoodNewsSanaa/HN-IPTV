@@ -266,13 +266,17 @@ internal static class Program
                 await Task.Delay(150);
                 if (playerColumn.ActualWidth < playerBefore + 30 || channelColumn.ActualWidth > channelsBefore - 30)
                     throw new InvalidOperationException("Player divider did not resize neighboring columns.");
-                double originalWindowWidth = window.Width, savedPlayerWidth = playerColumn.ActualWidth, savedGroupWidth = groupColumn.ActualWidth;
-                window.Width += 120; await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
-                await UntilAsync(() => Task.FromResult(playerColumn.ActualWidth > savedPlayerWidth + 1));
+                double originalWindowWidth = window.Width, originalMinWidth = window.MinWidth;
+                double actualWindowWidth = window.ActualWidth, savedPlayerWidth = playerColumn.ActualWidth;
+                results["panel_resize_before"] = new { actualWindowWidth, player = savedPlayerWidth, channels = channelColumn.ActualWidth, groups = groupColumn.ActualWidth };
+                window.MinWidth = Math.Min(originalMinWidth, actualWindowWidth - 100);
+                window.Width = actualWindowWidth - 80; await Task.Delay(200);
+                results["panel_resize_smaller"] = new { window = window.ActualWidth, player = playerColumn.ActualWidth };
+                await UntilAsync(() => Task.FromResult(playerColumn.ActualWidth < savedPlayerWidth - 5));
                 if (groupColumn.ActualWidth < groupColumn.MinWidth || channelColumn.ActualWidth < channelColumn.MinWidth)
                     throw new InvalidOperationException("Resizing violated panel minimum widths.");
-                window.Width = originalWindowWidth; await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
-                savedPlayerWidth = playerColumn.ActualWidth;
+                window.Width = originalWindowWidth; window.MinWidth = originalMinWidth;
+                await UntilAsync(() => Task.FromResult(Math.Abs(playerColumn.ActualWidth - savedPlayerWidth) < 3));
                 results["native_panel_resize_drag"] = true;
                 stage = "fullscreen";
                 var before = await controller.ProgressAsync();
@@ -281,8 +285,7 @@ internal static class Program
                 var after = await controller.ProgressAsync();
                 if (!after.Playing || after.Time <= before.Time) throw new InvalidOperationException("Playback did not advance across fullscreen.");
                 results["fullscreen_playback_advanced"] = true;
-                if (Math.Abs(playerColumn.ActualWidth - savedPlayerWidth) > 3)
-                    throw new InvalidOperationException("Fullscreen lost the resized panel proportions.");
+                await UntilAsync(() => Task.FromResult(Math.Abs(playerColumn.ActualWidth - savedPlayerWidth) < 3));
                 results["resized_layout_survived_fullscreen"] = true;
                 // Include the decoder child in MPC-HC memory and CPU comparisons.
                 if (BuildInfo.Engine == "mpv") {
