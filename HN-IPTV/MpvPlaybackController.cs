@@ -75,7 +75,7 @@ internal sealed class PlaybackController
             if (_handle == IntPtr.Zero) return;
             double position = 0;
             int status = Native.mpv_get_property(_handle, "time-pos", 5, ref position);
-            result = (_playing && !_paused && Number("core-idle") == 0 && status >= 0 && position > 0, status >= 0 ? (long)(position * 1000) : -1);
+            result = (_playing && !_paused && CoreActive() && status >= 0 && position > 0, status >= 0 ? (long)(position * 1000) : -1);
         }).ConfigureAwait(false);
         return result;
     }
@@ -88,7 +88,7 @@ internal sealed class PlaybackController
             if (!double.IsFinite(fps) || fps <= 0) fps = Number("container-fps");
             double rate = Number("cache-speed");
             double position = Number("time-pos");
-            bool active = _playing && !_paused && Number("core-idle") == 0 && position > 0;
+            bool active = _playing && !_paused && CoreActive() && position > 0;
             return new StreamInfo { Width = Integer("video-params/w"), Height = Integer("video-params/h"),
                 DisplayAspect = Number("video-params/aspect"), FramesPerSecond = fps,
                 VideoCodec = Text("video-codec"), AudioCodec = Text("audio-codec-name"),
@@ -98,6 +98,12 @@ internal sealed class PlaybackController
                 Playing = active, State = _paused ? "Paused" : active ? "Playing" : _playing ? "Buffering" : "Stopped" };
         }, ct).ConfigureAwait(false); }
         finally { _gate.Release(); }
+    }
+    private bool CoreActive()
+    {
+        // mpv flag properties do not convert to DOUBLE. Use MPV_FORMAT_FLAG (3).
+        int idle = 1;
+        return Native.mpv_get_property_flag(_handle, "core-idle", 3, ref idle) >= 0 && idle == 0;
     }
     private double Number(string name)
     {
@@ -178,6 +184,8 @@ internal sealed class PlaybackController
     private static class Native
     {
         private const string Library = "libmpv-2.dll";
+        [DllImport(Library, EntryPoint = "mpv_get_property", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int mpv_get_property_flag(IntPtr handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, int format, ref int value);
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr mpv_get_property_string(IntPtr handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern void mpv_free(IntPtr pointer);
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr mpv_create();
