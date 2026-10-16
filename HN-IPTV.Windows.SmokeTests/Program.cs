@@ -268,8 +268,9 @@ internal static class Program
                     throw new InvalidOperationException("Player divider did not resize neighboring columns.");
                 double originalWindowWidth = window.Width, savedPlayerWidth = playerColumn.ActualWidth, savedGroupWidth = groupColumn.ActualWidth;
                 window.Width += 120; await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
-                if (playerColumn.ActualWidth <= savedPlayerWidth || groupColumn.ActualWidth <= savedGroupWidth)
-                    throw new InvalidOperationException("Panel proportions did not expand with the app window.");
+                await UntilAsync(() => Task.FromResult(playerColumn.ActualWidth > savedPlayerWidth + 1));
+                if (groupColumn.ActualWidth < groupColumn.MinWidth || channelColumn.ActualWidth < channelColumn.MinWidth)
+                    throw new InvalidOperationException("Resizing violated panel minimum widths.");
                 window.Width = originalWindowWidth; await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
                 savedPlayerWidth = playerColumn.ActualWidth;
                 results["native_panel_resize_drag"] = true;

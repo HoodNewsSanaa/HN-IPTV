@@ -821,7 +821,7 @@ public partial class MainWindow : Window
         if (_isFullScreen || _closing || !_libraryLoadedSuccessfully) return;
         _playerSettings = _playerSettings with { GroupsColumnWeight = GroupsColumn.ActualWidth,
             ChannelsColumnWeight = ChannelsColumn.ActualWidth, PlayerColumnWeight = PlayerColumn.ActualWidth };
-        SavePlayerSettings();
+        ApplyColumnLayout(); SavePlayerSettings();
     }
     private async void Captions_Click(object sender, RoutedEventArgs e) => await ToggleCaptionsAsync();
     private void RenderCaptionsState()
