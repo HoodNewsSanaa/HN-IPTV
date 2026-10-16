@@ -182,7 +182,7 @@ internal static class Program
                 for (int i = 0; i < 5; i++)
                 {
                     Invoke(window, "Window_PreviewKeyDown", window, new KeyEventArgs(Keyboard.PrimaryDevice,
-                        PresentationSource.FromVisual(window), Environment.TickCount, Key.P));
+                        PresentationSource.FromVisual(window), Environment.TickCount, Key.P) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
                     var pip = (PictureInPictureWindow?)typeof(MainWindow).GetField("_pip", Private)!.GetValue(window);
                     if (pip == null) throw new InvalidOperationException("PiP failed to open.");
                     await UntilAsync(() => Task.FromResult(pip.IsLoaded));
