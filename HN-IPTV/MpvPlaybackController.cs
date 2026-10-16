@@ -14,7 +14,7 @@ internal sealed class PlaybackController
     private Task _events = Task.CompletedTask;
     private IntPtr _handle;
     private long _nextCommand;
-    private bool _disposed, _paused;
+    private bool _disposed, _paused, _captionsEnabled;
     private volatile bool _playing;
     public event Action? PlaybackError;
 
@@ -37,7 +37,8 @@ internal sealed class PlaybackController
         {
             foreach (var option in new[] { ("config", "no"), ("terminal", "no"), ("osc", "no"),
                 ("input-default-bindings", "no"), ("input-vo-keyboard", "no"), ("ytdl", "no"),
-                ("hwdec", "auto-safe"), ("vo", "gpu"), ("gpu-context", "d3d11"), ("cache", "yes") })
+                ("sub-create-cc-track", "yes"), ("sub-visibility", _captionsEnabled ? "yes" : "no"),
+                ("secondary-sub-visibility", "no"), ("hwdec", "auto-safe"), ("vo", "gpu"), ("gpu-context", "d3d11"), ("cache", "yes") })
                 Check(Native.mpv_set_option_string(_handle, option.Item1, option.Item2));
             long window = hwnd.ToInt64();
             Check(Native.mpv_set_option(_handle, "wid", 4, ref window));
@@ -66,6 +67,25 @@ internal sealed class PlaybackController
         _playing = false;
     }
     public Task PauseAsync() => RunAsync(() => { if (_handle != IntPtr.Zero) { _paused = !_paused; Set("pause", _paused ? "yes" : "no"); } });
+    public Task CaptionsAsync(bool enabled, CancellationToken ct = default) => RunAsync(() => {
+        if (_handle != IntPtr.Zero) {
+            if (enabled) Set("sid", "auto");
+            Set("sub-visibility", enabled ? "yes" : "no");
+            Set("secondary-sub-visibility", "no");
+        }
+        _captionsEnabled = enabled;
+    }, ct);
+    internal async Task<(bool Visible, string Text)> ReadCaptionsAsync()
+    {
+        (bool Visible, string Text) result = default;
+        await RunAsync(() => {
+            if (_handle == IntPtr.Zero) return;
+            int visible = 0;
+            Check(Native.mpv_get_property_flag(_handle, "sub-visibility", 3, ref visible));
+            result = (visible != 0, Text("sub-text"));
+        }).ConfigureAwait(false);
+        return result;
+    }
     public Task VolumeAsync(int volume) => RunAsync(() => { if (_handle != IntPtr.Zero) Set("volume", volume.ToString(System.Globalization.CultureInfo.InvariantCulture)); });
     internal async Task<(bool Playing, long Time)> ProgressAsync()
     {

@@ -261,6 +261,36 @@ internal static class Program
                 if (!after.Playing || after.Time <= before.Time) throw new InvalidOperationException("Playback did not advance across fullscreen.");
                 results["fullscreen_playback_advanced"] = true;
                 // Include the decoder child in MPC-HC memory and CPU comparisons.
+                if (BuildInfo.Engine == "mpv") {
+                    stage = "captions";
+                    var captionChannel = new Channel { Id = "captions", Name = "Caption fixture", GroupId = "test", GroupName = "Test", Command = server.Url + "captions.mkv" };
+                    await (Task)Invoke(window, "SetChannelsAsync", new[] { captionChannel }, new[] { new ChannelGroup("test", "Test") }, kind, "Caption fixture", "test", false)!;
+                    await UntilAsync(() => Task.FromResult(channelList.Items.Count == 1)); channelList.SelectedIndex = 0;
+                    await (Task)Invoke(window, "PlaySelectedAsync")!;
+                    await UntilAsync(async () => (await controller.ProgressAsync()).Playing);
+                    async Task<(bool Visible, string Text)> CaptionState() => await (Task<(bool Visible, string Text)>)typeof(PlaybackController).GetMethod("ReadCaptionsAsync", Private)!.Invoke(controller, null)!;
+                    if ((await CaptionState()).Visible) throw new InvalidOperationException("Captions should default to off.");
+                    var cc = (Button)window.FindName("CaptionsButton");
+                    cc.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    await UntilAsync(async () => { var state = await CaptionState(); return state.Visible && state.Text.Contains("HN-IPTV caption test"); });
+                    if (!cc.Content.ToString()!.Contains("On")) throw new InvalidOperationException("CC button state did not update.");
+                    await UntilAsync(() => Task.FromResult(File.Exists(Path.Combine(AppStorage.DataDirectory, "player-settings.json")) &&
+                        HnIptv.Preferences.PlayerSettings.Load(Path.Combine(AppStorage.DataDirectory, "player-settings.json")).CaptionsEnabled));
+                    await (Task)Invoke(window, "TuneSelectedAsync", true)!;
+                    await UntilAsync(async () => { var state = await CaptionState(); return state.Visible && state.Text.Contains("HN-IPTV caption test"); });
+                    cc.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    await UntilAsync(async () => !(await CaptionState()).Visible);
+                    Invoke(window, "TogglePictureInPicture");
+                    var captionPip = (PictureInPictureWindow)typeof(MainWindow).GetField("_pip", Private)!.GetValue(window)!;
+                    await UntilAsync(() => Task.FromResult(captionPip.IsLoaded)); captionPip.ShowControls(true);
+                    var pipCc = (Button)typeof(PictureInPictureWindow).GetField("_captionsButton", Private)!.GetValue(captionPip)!;
+                    pipCc.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    await UntilAsync(async () => (await CaptionState()).Visible);
+                    captionPip.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(captionPip), Environment.TickCount, Key.C) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+                    await UntilAsync(async () => !(await CaptionState()).Visible); captionPip.Close();
+                    results["captions_decoded_toggle_and_retune"] = true;
+                    results["captions_pip_button_and_shortcut"] = true;
+                }
                 var child = typeof(PlaybackController).GetMethod("ChildMetrics", Private | BindingFlags.Public)?.Invoke(controller, null);
                 if (child is ValueTuple<long, long, double> childMetrics) {
                     results["child_private_bytes"] = childMetrics.Item1; results["child_working_set_bytes"] = childMetrics.Item2; results["child_cpu_ms"] = childMetrics.Item3;

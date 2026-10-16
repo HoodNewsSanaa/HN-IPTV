@@ -20,6 +20,8 @@ internal sealed class PictureInPictureWindow : Window
     private readonly PlayerSettings _settings;
     private readonly Window _heading, _controls;
     private readonly TextBlock _title;
+    private readonly Action? _toggleCaptions;
+    private Button? _captionsButton;
     private readonly List<Window> _resizeHandles = new();
     private readonly DispatcherTimer _hover = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(120) };
     private bool _attached, _closed, _fitting;
@@ -28,9 +30,9 @@ internal sealed class PictureInPictureWindow : Window
     internal double VideoAspect => _aspect;
 
     public PictureInPictureWindow(NativeVideoHost home, PlayerSettings settings, int volume,
-        Action pause, Action<bool> mute, Action<int> setVolume, Action<PlayerSettings> save)
+        Action pause, Action<bool> mute, Action<int> setVolume, Action<PlayerSettings> save, Action? toggleCaptions = null, bool captionsEnabled = false)
     {
-        _home = home; _save = save; _settings = settings;
+        _home = home; _save = save; _settings = settings; _toggleCaptions = toggleCaptions;
         Title = "HN-IPTV — Picture in picture";
         Topmost = true; MinWidth = 256; MinHeight = 1;
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.CanResize;
@@ -58,6 +60,11 @@ internal sealed class PictureInPictureWindow : Window
         };
         var controls = new DockPanel { Margin = new Thickness(4, 0, 4, 0) };
         controls.Children.Add(Button("Ⅱ", pause));
+        if (BuildInfo.Engine == "mpv" && toggleCaptions != null) {
+            _captionsButton = Button("CC", toggleCaptions);
+            _captionsButton.ToolTip = "Toggle closed captions (C)";
+            SetCaptionsEnabled(captionsEnabled); controls.Children.Add(_captionsButton);
+        }
         bool muted = false;
         var muteButton = Button("Mute", () => { });
         muteButton.Click += (_, _) => { muted = !muted; muteButton.Content = muted ? "Unmute" : "Mute"; mute(muted); };
@@ -71,6 +78,7 @@ internal sealed class PictureInPictureWindow : Window
         PreviewKeyDown += (_, e) => {
             if (e.Key == Key.Escape) { Close(); e.Handled = true; }
             else if (e.Key == Key.P && !e.IsRepeat && Keyboard.Modifiers == ModifierKeys.None) { Close(); e.Handled = true; }
+            else if (CaptionKey(e)) { }
             else if (e.Key == Key.Space) { pause(); e.Handled = true; }
             else if (e.Key == Key.Tab) ShowControls(true);
         };
@@ -91,7 +99,7 @@ internal sealed class PictureInPictureWindow : Window
                         Cursor = hit is 10 or 11 ? Cursors.SizeWE : hit is 12 or 15 ? Cursors.SizeNS : hit is 13 or 17 ? Cursors.SizeNWSE : Cursors.SizeNESW };
                     grip.MouseLeftButtonDown += (_, e) => { e.Handled = true; ReleaseCapture();
                         SendMessage(new WindowInteropHelper(this).Handle, 0x00A1, new IntPtr(edge), IntPtr.Zero); };
-                    grip.PreviewKeyDown += (_, e) => { if (e.Key == Key.P && !e.IsRepeat) { e.Handled = true; Close(); } };
+                    grip.PreviewKeyDown += (_, e) => { if (CaptionKey(e)) return; if (e.Key == Key.P && !e.IsRepeat) { e.Handled = true; Close(); } };
                     _resizeHandles.Add(grip);
                 }
                 PositionOverlays(); foreach (var grip in _resizeHandles) grip.Show();
@@ -116,9 +124,19 @@ internal sealed class PictureInPictureWindow : Window
         Height = height, Content = content
         };
         overlay.PreviewKeyDown += (_, e) => {
+            if (CaptionKey(e)) return;
             if ((e.Key == Key.P && !e.IsRepeat && Keyboard.Modifiers == ModifierKeys.None) || e.Key == Key.Escape) { e.Handled = true; Close(); }
         };
         return overlay;
+    }
+    private bool CaptionKey(KeyEventArgs e)
+    {
+        if (e.Key != Key.C || e.IsRepeat || Keyboard.Modifiers != ModifierKeys.None || BuildInfo.Engine != "mpv") return false;
+        _toggleCaptions?.Invoke(); e.Handled = true; return true;
+    }
+    internal void SetCaptionsEnabled(bool enabled)
+    {
+        if (_captionsButton != null) _captionsButton.Content = enabled ? "CC: On" : "CC: Off";
     }
     internal void SetChannelTitle(string text) { Title = "HN-IPTV — " + text; _title.Text = text; }
     internal void SetAspect(double aspect)

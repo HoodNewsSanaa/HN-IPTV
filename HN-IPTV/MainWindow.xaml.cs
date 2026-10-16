@@ -35,7 +35,7 @@ public partial class MainWindow : Window
     private PictureInPictureWindow? _pip;
     private readonly DispatcherTimer _infoTimer = new(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
     private readonly DispatcherTimer _volumeDebounce = new() { Interval = TimeSpan.FromMilliseconds(50) };
-    private bool _readingInfo;
+    private bool _readingInfo, _changingCaptions;
     private StreamInfo _streamInfo = StreamInfo.Empty;
     private Stopwatch? _tuneWatch;
     private Channel? _playingChannel;
@@ -98,6 +98,7 @@ public partial class MainWindow : Window
         _librarySaves = new(snapshot => { using var timing = App.Measure("library.save"); _library.SaveSnapshot(snapshot); });
         _preferenceSaves = new(_preferences.SaveSnapshot);
         InitializeComponent();
+        CaptionsButton.Visibility = BuildInfo.Engine == "mpv" ? Visibility.Visible : Visibility.Collapsed;
         _playback.PlaybackError += () => Dispatcher.BeginInvoke(new Action(() =>
         { if (!_closing) SetStatus("Playback failed. Check the stream and provider permissions."); }));
         _groupSearchDebounce.Tick += (_, _) => { _groupSearchDebounce.Stop(); _groupView?.Refresh();
@@ -161,6 +162,7 @@ public partial class MainWindow : Window
                 try { _playerSettings = PlayerSettings.Load(PlayerSettingsPath); }
                 catch (Exception ex) { App.LogException("settings.load", ex); }
             });
+            RenderCaptionsState();
             BufferSelector.SelectedIndex = _playerSettings.BufferMilliseconds <= 500 ? 0 : _playerSettings.BufferMilliseconds >= 3000 ? 2 : 1;
             if (_closing) return;
             _ = _logos.PruneAsync();
@@ -743,6 +745,9 @@ public partial class MainWindow : Window
             if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
                 throw new InvalidOperationException("The source did not provide a valid stream URL.");
             using var timing = App.Measure("playback.tune_request");
+#if USE_MPV
+            await _playback.CaptionsAsync(_playerSettings.CaptionsEnabled, cts.Token);
+#endif
             await _playback.PlayAsync(uri, VideoView.VideoHandle, (int)VolumeSlider.Value, cts.Token, _playerSettings.BufferMilliseconds);
             if (cts.IsCancellationRequested || _closing) return;
             _failedTunes.Remove(failureKey);
@@ -804,6 +809,32 @@ public partial class MainWindow : Window
         _volumeDebounce.Stop(); _volumeDebounce.Start();
     }
 
+    private async void Captions_Click(object sender, RoutedEventArgs e) => await ToggleCaptionsAsync();
+    private void RenderCaptionsState()
+    {
+        CaptionsButton.Content = _playerSettings.CaptionsEnabled ? "CC: On" : "CC: Off";
+        System.Windows.Automation.AutomationProperties.SetName(CaptionsButton,
+            _playerSettings.CaptionsEnabled ? "Closed captions on" : "Closed captions off");
+        _pip?.SetCaptionsEnabled(_playerSettings.CaptionsEnabled);
+    }
+    private async Task ToggleCaptionsAsync()
+    {
+#if USE_MPV
+        if (_closing || _changingCaptions) return;
+        _changingCaptions = true; CaptionsButton.IsEnabled = false;
+        try {
+            bool enabled = !_playerSettings.CaptionsEnabled;
+            await _playback.CaptionsAsync(enabled);
+            if (_closing) return;
+            _playerSettings = _playerSettings with { CaptionsEnabled = enabled };
+            RenderCaptionsState(); SavePlayerSettings();
+            SetStatus(enabled ? "Closed captions on — shown when supplied by the channel." : "Closed captions off.");
+        } catch (Exception ex) { App.LogException("playback.captions", ex); SetStatus("Unable to change closed captions."); }
+        finally { _changingCaptions = false; CaptionsButton.IsEnabled = true; }
+#else
+        await Task.CompletedTask;
+#endif
+    }
     private void StreamInfo_Click(object sender, RoutedEventArgs e)
     {
         StreamInfoPanel.Visibility = StreamInfoPanel.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
@@ -879,7 +910,7 @@ public partial class MainWindow : Window
                     _playerSettings = _playerSettings with { PipLeft = settings.PipLeft, PipTop = settings.PipTop,
                         PipWidth = settings.PipWidth, PipHeight = settings.PipHeight };
                     SavePlayerSettings();
-                });
+                }, () => _ = ToggleCaptionsAsync(), _playerSettings.CaptionsEnabled);
             _pip = pip;
             pip.SetChannelTitle(_playingChannel?.Name ?? "HN-IPTV");
             pip.SetAspect(_streamInfo.AspectRatio);
@@ -908,6 +939,8 @@ public partial class MainWindow : Window
         if (e.Key == Key.Escape && _isFullScreen) { ToggleFullscreen(); e.Handled = true; }
         else if (e.Key == Key.P && !e.IsRepeat && Keyboard.Modifiers == ModifierKeys.None && Keyboard.FocusedElement is not TextBoxBase && Keyboard.FocusedElement is not PasswordBox)
         { TogglePictureInPicture(); e.Handled = true; }
+        else if (e.Key == Key.C && !e.IsRepeat && Keyboard.Modifiers == ModifierKeys.None && Keyboard.FocusedElement is not TextBoxBase && Keyboard.FocusedElement is not PasswordBox)
+        { _ = ToggleCaptionsAsync(); e.Handled = BuildInfo.Engine == "mpv"; }
         else if (e.Key == Key.F && Keyboard.FocusedElement is not TextBox)
         { ToggleFullscreen(); e.Handled = true; }
     }

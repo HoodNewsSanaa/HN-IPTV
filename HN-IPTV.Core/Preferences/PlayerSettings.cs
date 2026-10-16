@@ -5,6 +5,7 @@ namespace HnIptv.Preferences;
 
 public sealed record PlayerSettings
 {
+    public bool CaptionsEnabled { get; init; }
     public int BufferMilliseconds { get; init; } = 1200;
     public double PipLeft { get; init; } = 80;
     public double PipTop { get; init; } = 80;

@@ -24,7 +24,7 @@ jobs:
         run: ./test-core.ps1
       - name: Publish mpv application
         shell: pwsh
-        run: ./build-windows.ps1 -Engine mpv -Version 0.9.1
+        run: ./build-windows.ps1 -Engine mpv -Version 0.9.2
       - name: Test playback, shortcuts, single-click and PiP
         shell: pwsh
         run: ./test-windows.ps1
@@ -37,12 +37,12 @@ jobs:
           }
       - name: Package tested mpv publish
         shell: pwsh
-        run: ./build-release.ps1 -UseExistingPublish -Engine mpv -Version 0.9.1 -QuickCompression
+        run: ./build-release.ps1 -UseExistingPublish -Engine mpv -Version 0.9.2 -QuickCompression
       - name: Verify installer and saved data
         shell: pwsh
         run: |
           ./build-upgrade-fixture.ps1
-          ./test-installer.ps1 -PreviousSetup ./artifacts/upgrade-fixture/HN-IPTV-Previous-Setup.exe -ExpectedVersion 0.9.1
+          ./test-installer.ps1 -PreviousSetup ./artifacts/upgrade-fixture/HN-IPTV-Previous-Setup.exe -ExpectedVersion 0.9.2
       - name: Label mpv downloads
         shell: pwsh
         run: |
@@ -53,7 +53,7 @@ jobs:
           } | Set-Content dist/SHA256SUMS.txt -Encoding ascii
       - uses: actions/upload-artifact@v4
         with:
-          name: HN-IPTV-mpv-0.9.1
+          name: HN-IPTV-mpv-0.9.2
           path: |
             dist/HN-IPTV-mpv-Setup.exe
             dist/HN-IPTV-mpv-Portable.zip

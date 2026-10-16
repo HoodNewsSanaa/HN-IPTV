@@ -1,4 +1,4 @@
-param([switch]$FastStartup, [string]$Version = '0.9.1', [ValidateSet('vlc','mpv','mpc')][string]$Engine = 'vlc', [switch]$NoRestore)
+param([switch]$FastStartup, [string]$Version = '0.9.2', [ValidateSet('vlc','mpv','mpc')][string]$Engine = 'vlc', [switch]$NoRestore)
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must be major.minor.patch.' }
 if ($Engine -eq 'mpv') { & (Join-Path $PSScriptRoot 'prepare-mpv.ps1') }

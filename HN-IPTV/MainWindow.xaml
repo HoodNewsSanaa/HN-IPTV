@@ -205,6 +205,7 @@
                     <Button Content="■ Stop" Click="Stop_Click" Margin="0,3,5,3"/>
                     <Button Content="⛶" ToolTip="Fullscreen (F)" Click="Fullscreen_Click" Margin="0,3,5,3"/>
                     <Button Content="PiP" ToolTip="Floating picture in picture (P)" Click="Pip_Click" Margin="0,3,5,3"/>
+                    <Button Content="CC: Off" x:Name="CaptionsButton" Click="Captions_Click" ToolTip="Toggle closed captions (C), when supplied by the channel" Margin="0,3,5,3"/>
                     <Button Content="Info" x:Name="StreamInfoButton" Click="StreamInfo_Click" ToolTip="Show stream resolution, frame rate, input bitrate and audio format" Margin="0,3,5,3"/>
                     <ComboBox x:Name="BufferSelector" Width="94" VerticalAlignment="Center" Margin="0,3,7,3"
                               ToolTip="Playback buffer. Applies on next tune." SelectionChanged="BufferSelector_SelectionChanged">
