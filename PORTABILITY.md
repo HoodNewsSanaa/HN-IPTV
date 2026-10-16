@@ -2,7 +2,7 @@
 
 ## Portable edition
 
-Extract the whole portable ZIP to a writable folder. Keep `portable.mode`, the EXE, its DLLs, `libvlc`, and `data` together. Nothing needs to be registered or installed. Data is saved to `data/saved-playlists.json`, `data/channel-preferences.json`, `data/playlists/`, and `data/logos/`. Provider EPG is part of the saved library. The folder can be moved to another Windows computer or USB drive.
+Extract the whole portable ZIP to a writable folder. Keep `portable.mode`, the EXE, its DLLs (including `libmpv-2.dll`), and `data` together. Nothing needs to be registered or installed. Data is saved to `data/saved-playlists.json`, `data/channel-preferences.json`, `data/playlists/`, and `data/logos/`. Provider EPG is part of the saved library. The folder can be moved to another Windows computer or USB drive.
 
 There is no master password or portable vault in Update 7. Anyone who can read the portable folder can read provider credentials and credential-bearing M3U URLs. Its `.bak` files have the same sensitivity. Keep the folder private; use device/disk encryption if appropriate. Never commit, upload, email, or attach your `data` folder or imported playlists to a public repository. The packaged releases contain an empty data directory only. Diagnostics record operation names, types and timings, not credentials or URLs.
 
@@ -18,7 +18,7 @@ Unencrypted JSON created by Update 7 moves automatically with the folder. Instal
 
 ## Installed edition
 
-The installer uses the existing application ID and `%LOCALAPPDATA%/Programs/HN-IPTV` installation path. Saved playlists remain in `%LOCALAPPDATA%/HN-IPTV/saved-playlists.dpapi`, protected with Windows DPAPI. Install a newer setup over the old version. The installer replaces program files and removes redundant old VLC architectures; it does not delete user data during an upgrade. Earlier LumaTV playlist/preferences files are copied on first use when no HN-IPTV copy exists.
+The installer uses the existing application ID and `%LOCALAPPDATA%/Programs/HN-IPTV` installation path. Saved playlists remain in `%LOCALAPPDATA%/HN-IPTV/saved-playlists.dpapi`, protected with Windows DPAPI. Install a newer setup over the old version. The installer replaces program files and removes obsolete VLC engine files when switching to mpv; it does not delete user data during an upgrade. Earlier LumaTV playlist/preferences files are copied on first use when no HN-IPTV copy exists.
 
 Interactive uninstall asks whether to remove saved data. Silent uninstall keeps it. The Start Menu shortcut is created automatically; the desktop shortcut is optional.
 

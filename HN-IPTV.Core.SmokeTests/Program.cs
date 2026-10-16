@@ -4,6 +4,7 @@ using HnIptv.Models;
 using HnIptv.Navigation;
 using HnIptv.Services;
 using HnIptv.Preferences;
+using HnIptv.Playback;
 
 var playlist = "#EXTM3U\n#EXTINF:-1 tvg-logo=\"https://example.test/icon.png\" group-title=\"News\",World One\nhttps://example.test/stream.m3u8";
 var parsed = M3uService.Parse(playlist);
@@ -233,7 +234,7 @@ try
     Check(savedSettings.BufferMilliseconds == 3000 && savedSettings.PipWidth == 640 && savedSettings.PipLeft == -500,
         "portable buffer and PiP settings round trip");
     var safeSettings = new PlayerSettings { BufferMilliseconds = -1, PipWidth = double.NaN, PipHeight = 0 }.Normalize();
-    Check(safeSettings.BufferMilliseconds == 250 && safeSettings.PipWidth == 480 && safeSettings.PipHeight == 220,
+    Check(safeSettings.BufferMilliseconds == 250 && safeSettings.PipWidth == 480 && safeSettings.PipHeight == 64,
         "invalid player settings bounded");
 }
 finally { Directory.Delete(settingsDirectory, true); }
@@ -246,6 +247,20 @@ catch (Exception ex)
         "sanitized diagnostics omit credentials and source paths");
 }
 Console.WriteLine("EPG priority/cancellation, player settings and diagnostic privacy checks passed.");
+
+// Real format/geometry edge cases, including anamorphic and portrait streams.
+var info = new StreamInfo { Width = 720, Height = 576, DisplayAspect = 16d / 9,
+    FramesPerSecond = 30000d / 1001, InputBitsPerSecond = 4_500_000,
+    AudioCodec = "AAC", AudioChannels = 2, AudioSampleRate = 48000 };
+Check(info.FrameRateText == "29.97 fps" && info.BitrateText == "4.50 Mb/s" && info.AudioText.Contains("48 kHz"), "stream units and fractional frame rate");
+Check(StreamInfo.Empty.FrameRateText == "Unavailable" && StreamInfo.Empty.BitrateText == "Unavailable", "unknown stats do not invent values");
+foreach (double aspect in new[] { 16d / 9, 4d / 3, 9d / 16, 2.35 }) {
+    var fit = VideoGeometry.Fit(640, aspect, 1024, 768);
+    Check(Math.Abs(fit.Width / fit.Height - aspect) < 0.00001 && fit.Width <= 1024 && fit.Height <= 768, "aspect preservation within bounds");
+}
+var attributes = M3uService.Parse("#EXTM3U\n#EXTINF:-1 group-title=\"First\" GROUP-TITLE=\"News, live\" unknown=\"skip\" tvg-id=\"one\",Title group-title=\"Do not parse me\"\nhttps://example.test/live.ts");
+Check(attributes.Single().GroupName == "News, live" && attributes.Single().Name == "Title group-title=\"Do not parse me\"", "metadata boundary and duplicate attributes");
+Console.WriteLine("Stream telemetry, PiP aspect and allocation-efficient parser checks passed.");
 
 static void Check(bool condition, string name)
 {

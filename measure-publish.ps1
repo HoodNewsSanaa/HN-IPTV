@@ -2,11 +2,12 @@ param([string]$PublishDirectory = (Join-Path $PSScriptRoot 'artifacts/publish'),
       [string]$DistDirectory = (Join-Path $PSScriptRoot 'dist'),
       [string]$OutputPath = (Join-Path $PSScriptRoot 'artifacts/size-report.json'))
 $ErrorActionPreference = 'Stop'
-$totals = [ordered]@{ app_and_notices = [long]0; dotnet_runtime = [long]0; vlc_x64 = [long]0; mpv = [long]0; vlc_other_architectures = [long]0 }
+$totals = [ordered]@{ app_and_notices = [long]0; dotnet_runtime = [long]0; vlc_x64 = [long]0; mpv = [long]0; mpc = [long]0; vlc_other_architectures = [long]0 }
 $files = @(Get-ChildItem $PublishDirectory -File -Recurse)
 foreach ($file in $files) {
     $path = [IO.Path]::GetRelativePath($PublishDirectory, $file.FullName).Replace('\','/')
     $key = if ($path -eq 'libmpv-2.dll') { 'mpv' }
+        elseif ($path -like 'mpc-hc/*') { 'mpc' }
         elseif ($path -eq 'build-manifest.json') { 'app_and_notices' }
         elseif ($path -like 'libvlc/win-x64/*') { 'vlc_x64' }
         elseif ($path -like 'libvlc/*') { 'vlc_other_architectures' }

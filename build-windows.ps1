@@ -1,7 +1,8 @@
-param([switch]$FastStartup, [string]$Version = '0.8.0', [ValidateSet('vlc','mpv')][string]$Engine = 'vlc', [switch]$NoRestore)
+param([switch]$FastStartup, [string]$Version = '0.9.2', [ValidateSet('vlc','mpv','mpc')][string]$Engine = 'mpv', [switch]$NoRestore)
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must be major.minor.patch.' }
 if ($Engine -eq 'mpv') { & (Join-Path $PSScriptRoot 'prepare-mpv.ps1') }
+if ($Engine -eq 'mpc') { & (Join-Path $PSScriptRoot 'prepare-mpc.ps1') }
 $publish = Join-Path $PSScriptRoot 'artifacts/publish'
 if (Test-Path $publish) { Remove-Item -LiteralPath $publish -Recurse -Force }
 $readyToRun = if ($FastStartup) { 'true' } else { 'false' }
@@ -15,7 +16,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Windows x64 publish failed.' }
 # configuration. Symbols are retained in build outputs, never release payloads.
 Get-ChildItem $publish -Recurse -File -Filter '*.pdb' | Remove-Item -Force
 Copy-Item (Join-Path $PSScriptRoot 'PORTABILITY.md'),(Join-Path $PSScriptRoot 'THIRD-PARTY.md') $publish
-Copy-Item (Join-Path $PSScriptRoot 'licenses') $publish -Recurse
+$licenseDirectory = Join-Path $publish 'licenses'
+New-Item -ItemType Directory -Force $licenseDirectory | Out-Null
+Copy-Item (Join-Path $PSScriptRoot 'licenses/*') $licenseDirectory -Recurse -Force
 $manifest = [ordered]@{ version=$Version; engine=$Engine; source_commit=$env:GITHUB_SHA;
     application_sha256=(Get-FileHash (Join-Path $publish 'HN-IPTV.dll') -Algorithm SHA256).Hash.ToLowerInvariant() }
 $manifest | ConvertTo-Json | Set-Content (Join-Path $publish 'build-manifest.json') -Encoding utf8

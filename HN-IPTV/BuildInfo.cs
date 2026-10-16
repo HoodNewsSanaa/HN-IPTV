@@ -2,7 +2,9 @@ namespace HnIptv;
 
 internal static class BuildInfo
 {
-#if USE_MPV
+#if USE_MPC
+    public const string Engine = "mpc";
+#elif USE_MPV
     public const string Engine = "mpv";
 #else
     public const string Engine = "vlc";

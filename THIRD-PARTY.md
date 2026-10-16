@@ -10,4 +10,15 @@
 No project-wide license was added or changed by this update.
 
 
-Optional mpv comparison source is included, but its binary is not distributed with the normal release. The bootstrap source/digests and distribution considerations are documented in ENGINE-COMPARISON.md.
+mpv is the default engine. VLC packages and notices above apply to optional VLC builds. Only the selected native engine is included in a package.
+
+## mpv package
+
+The standard mpv build includes the unmodified libmpv-2.dll pinned by mpv-build.json. GPL version 3 text is included in licenses/GPL-3.0.txt.
+
+- mpv source revision: https://github.com/mpv-player/mpv/tree/492bae0768
+- Upstream binary: https://github.com/shinchiro/mpv-winbuild-cmake/releases/tag/20261015
+- Build scripts and dependency recipes: https://github.com/shinchiro/mpv-winbuild-cmake/tree/1f8d2e7
+- HN-IPTV application and embedding source: https://github.com/HoodNewsSanaa/HN-IPTV
+
+The bootstrap manifest records exact archive and DLL hashes. Native libraries remain separate and replaceable. Application source and build scripts are available in the linked HN-IPTV repository.

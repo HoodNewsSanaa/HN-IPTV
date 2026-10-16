@@ -44,11 +44,19 @@
         <!-- Main content -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="GroupsColumn" Width="215"/>
-                <ColumnDefinition x:Name="ChannelsColumn" Width="390"/>
-                <ColumnDefinition Width="*"/>
+                <ColumnDefinition x:Name="GroupsColumn" Width="215*" MinWidth="160"/>
+                <ColumnDefinition x:Name="ChannelsColumn" Width="390*" MinWidth="220"/>
+                <ColumnDefinition x:Name="PlayerColumn" Width="755*" MinWidth="360"/>
             </Grid.ColumnDefinitions>
 
+            <GridSplitter x:Name="GroupsDivider" Grid.Column="0" Width="6" HorizontalAlignment="Right"
+                          VerticalAlignment="Stretch" Background="#31445D" Cursor="SizeWE" Panel.ZIndex="10"
+                          ResizeDirection="Columns" ResizeBehavior="CurrentAndNext" DragCompleted="ColumnDivider_DragCompleted"
+                          ToolTip="Drag to resize groups and channels"/>
+            <GridSplitter x:Name="PlayerDivider" Grid.Column="1" Width="6" HorizontalAlignment="Right"
+                          VerticalAlignment="Stretch" Background="#31445D" Cursor="SizeWE" Panel.ZIndex="10"
+                          ResizeDirection="Columns" ResizeBehavior="CurrentAndNext" DragCompleted="ColumnDivider_DragCompleted"
+                          ToolTip="Drag to resize channels and player"/>
             <!-- Left navigation -->
             <Border Grid.Column="0" Background="#111927" BorderBrush="#223147" BorderThickness="0,0,1,0">
                 <DockPanel Margin="12,16,12,12">
@@ -94,7 +102,7 @@
                              ScrollViewer.CanContentScroll="True" VirtualizingPanel.IsVirtualizing="True"
                              VirtualizingPanel.VirtualizationMode="Recycling"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             SelectionChanged="ChannelsList_SelectionChanged" MouseDoubleClick="ChannelsList_DoubleClick">
+                             SelectionChanged="ChannelsList_SelectionChanged">
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem" BasedOn="{StaticResource SideListStyle}">
                                 <EventSetter Event="PreviewMouseLeftButtonDown" Handler="ChannelItem_MouseDown"/>
@@ -150,6 +158,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition x:Name="PlayerTitleRow" Height="Auto"/>
                     <RowDefinition x:Name="PlayerVideoRow" Height="3*"/>
+                    <RowDefinition x:Name="PlayerInfoRow" Height="Auto"/>
                     <RowDefinition x:Name="PlayerGuideRow" Height="2*"/>
                     <RowDefinition x:Name="PlayerControlsRow" Height="Auto"/>
                 </Grid.RowDefinitions>
@@ -164,7 +173,15 @@
                 <Border Grid.Row="1" Background="Black" CornerRadius="9" ClipToBounds="True">
                     <local:NativeVideoHost x:Name="VideoView" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
                 </Border>
-                <Grid Grid.Row="2" x:Name="GuideRoot" Margin="0,18,0,6">
+                <Border Grid.Row="2" x:Name="StreamInfoPanel" Visibility="Collapsed" Background="#182338" CornerRadius="6" Padding="12,9" Margin="0,8,0,0">
+                    <StackPanel>
+                        <TextBlock Text="STREAM INFORMATION" FontWeight="SemiBold" FontSize="11" Foreground="#6ECDE7" Margin="0,0,0,5"/>
+                        <TextBlock x:Name="StreamVideoInfo" Text="Video: Unavailable" TextWrapping="Wrap" FontSize="12"/>
+                        <TextBlock x:Name="StreamBitrateInfo" Text="Input bitrate: Unavailable" TextWrapping="Wrap" FontSize="12" Margin="0,3,0,0"/>
+                        <TextBlock x:Name="StreamAudioInfo" Text="Audio: Unavailable" TextWrapping="Wrap" FontSize="12" Margin="0,3,0,0"/>
+                    </StackPanel>
+                </Border>
+                <Grid Grid.Row="3" x:Name="GuideRoot" Margin="0,18,0,6">
                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                     <Grid Grid.Row="0" Margin="4,0,0,11">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -190,25 +207,23 @@
                         </ItemsControl>
                     </ScrollViewer>
                 </Grid>
-                <Grid Grid.Row="3" x:Name="PlaybackButtons" Margin="0,12,0,0">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="85"/>
-                    </Grid.ColumnDefinitions>
-                    <Button Grid.Column="0" Content="▶  Play" Click="Play_Click" Margin="0,0,8,0"/>
-                    <Button Grid.Column="1" Content="Ⅱ  Pause" Click="Pause_Click" Margin="0,0,8,0"/>
-                    <Button Grid.Column="2" Content="■  Stop" Click="Stop_Click"/>
-                    <Button Grid.Column="4" Content="⛶" ToolTip="Fullscreen (F)" Click="Fullscreen_Click" Margin="5,0"/>
-                    <Button Grid.Column="5" Content="PiP" ToolTip="Floating picture in picture" Click="Pip_Click" Margin="0,0,5,0"/>
-                    <ComboBox Grid.Column="6" x:Name="BufferSelector" Width="94" VerticalAlignment="Center" Margin="0,0,7,0"
-                              ToolTip="Playback buffer: quicker tuning or more tolerance for interruptions. Applies on next tune."
-                              SelectionChanged="BufferSelector_SelectionChanged">
+                <WrapPanel Grid.Row="4" x:Name="PlaybackButtons" Margin="0,8,0,0">
+                    <Button Content="▶ Play" Click="Play_Click" Margin="0,3,5,3"/>
+                    <Button Content="Ⅱ Pause" Click="Pause_Click" Margin="0,3,5,3"/>
+                    <Button Content="■ Stop" Click="Stop_Click" Margin="0,3,5,3"/>
+                    <Button Content="⛶" ToolTip="Fullscreen (F)" Click="Fullscreen_Click" Margin="0,3,5,3"/>
+                    <Button Content="PiP" ToolTip="Floating picture in picture (P)" Click="Pip_Click" Margin="0,3,5,3"/>
+                    <Button Content="CC: Off" x:Name="CaptionsButton" Click="Captions_Click" ToolTip="Toggle closed captions (C), when supplied by the channel" Margin="0,3,5,3"/>
+                    <Button Content="Info" x:Name="StreamInfoButton" Click="StreamInfo_Click" ToolTip="Show stream resolution, frame rate, input bitrate and audio format" Margin="0,3,5,3"/>
+                    <ComboBox x:Name="BufferSelector" Width="94" VerticalAlignment="Center" Margin="0,3,7,3"
+                              ToolTip="Playback buffer. Applies on next tune." SelectionChanged="BufferSelector_SelectionChanged">
                         <ComboBoxItem Content="Fast" Tag="500"/>
                         <ComboBoxItem Content="Balanced" Tag="1200"/>
                         <ComboBoxItem Content="Resilient" Tag="3000"/>
                     </ComboBox>
-                    <Slider Grid.Column="7" x:Name="VolumeSlider" Minimum="0" Maximum="100" Value="85"
-                            TickFrequency="10" ValueChanged="VolumeSlider_ValueChanged" VerticalAlignment="Center"/>
-                </Grid>
+                    <Slider x:Name="VolumeSlider" Width="75" Minimum="0" Maximum="100" Value="85" TickFrequency="10" Margin="2,3,0,3"
+                            ValueChanged="VolumeSlider_ValueChanged" VerticalAlignment="Center" ToolTip="Volume"/>
+                </WrapPanel>
             </Grid>
         </Grid>
 

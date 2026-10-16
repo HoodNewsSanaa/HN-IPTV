@@ -1,14 +1,14 @@
-param([switch]$PortableOnly, [switch]$FastStartup, [string]$Version = '0.8.0', [switch]$UseExistingPublish, [switch]$QuickCompression)
+param([switch]$PortableOnly, [switch]$FastStartup, [string]$Version = '0.9.2', [switch]$UseExistingPublish, [switch]$QuickCompression, [ValidateSet('vlc','mpv')][string]$Engine = 'mpv')
 $ErrorActionPreference = 'Stop'
 if (-not $UseExistingPublish) {
-    & (Join-Path $PSScriptRoot 'build-windows.ps1') -FastStartup:$FastStartup -Version $Version
+    & (Join-Path $PSScriptRoot 'build-windows.ps1') -FastStartup:$FastStartup -Version $Version -Engine $Engine
 }
 $publish = Join-Path $PSScriptRoot 'artifacts/publish'
 $manifest = Get-Content (Join-Path $publish 'build-manifest.json') -Raw | ConvertFrom-Json
-if ($manifest.version -ne $Version -or $manifest.engine -ne 'vlc') { throw 'Expected a VLC publish with the requested release version.' }
+if ($manifest.version -ne $Version -or $manifest.engine -ne $Engine) { throw 'Expected the requested playback engine and release version.' }
 if ((Get-FileHash (Join-Path $publish 'HN-IPTV.dll') -Algorithm SHA256).Hash -ne $manifest.application_sha256) { throw 'Published assembly differs from its build manifest.' }
 if ($env:GITHUB_SHA -and $manifest.source_commit -ne $env:GITHUB_SHA) { throw 'Published source commit differs from this workflow.' }
-& (Join-Path $PSScriptRoot 'verify-package.ps1') -PublishDirectory $publish -Engine vlc
+& (Join-Path $PSScriptRoot 'verify-package.ps1') -PublishDirectory $publish -Engine $Engine
 $dist = Join-Path $PSScriptRoot 'dist'
 New-Item -ItemType Directory -Force $dist | Out-Null
 # Never include stale setup/checksums from a previous or portable-only build.
@@ -38,7 +38,7 @@ if (-not $PortableOnly) {
     if (-not $iscc -or -not (Test-Path $iscc)) { throw 'Inno Setup 6 is required for the installer. The portable ZIP is available.' }
     [string[]]$compressionArguments = @()
     if ($QuickCompression) { $compressionArguments += '/DQuickCompression' }
-    & $iscc @compressionArguments "/DAppVersion=$Version" (Join-Path $PSScriptRoot 'installer/HN-IPTV.iss')
+    & $iscc @compressionArguments "/DAppVersion=$Version" "/DPlaybackEngine=$Engine" (Join-Path $PSScriptRoot 'installer/HN-IPTV.iss')
     if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
 }
 $names = @('HN-IPTV-Portable.zip')

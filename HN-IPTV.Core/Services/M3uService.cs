@@ -34,8 +34,6 @@ public static partial class M3uService
             var line = raw.Trim().TrimStart('\ufeff');
             if (line.StartsWith("#EXTINF:", StringComparison.OrdinalIgnoreCase))
             {
-                var attributes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                foreach (Match match in AttributePattern().Matches(line)) attributes[match.Groups[1].Value] = match.Groups[2].Value;
                 bool quoted = false;
                 int comma = -1;
                 for (int i = 0; i < line.Length; i++)
@@ -45,9 +43,20 @@ public static partial class M3uService
                 }
                 title = comma >= 0 ? line[(comma + 1)..].Trim() : "Unnamed channel";
                 if (string.IsNullOrEmpty(title)) title = "Unnamed channel";
-                group = attributes.GetValueOrDefault("group-title", "Uncategorized");
-                logo = attributes.GetValueOrDefault("tvg-logo", "");
-                tvgId = attributes.GetValueOrDefault("tvg-id", "");
+                group = "Uncategorized"; logo = ""; tvgId = "";
+                // Enumerate value matches over metadata only: no per-channel
+                // dictionary, Match/Group objects or allocations for unused tags.
+                var metadata = line.AsSpan(0, comma >= 0 ? comma : line.Length);
+                foreach (var match in AttributePattern().EnumerateMatches(metadata))
+                {
+                    var attribute = metadata.Slice(match.Index, match.Length);
+                    int equal = attribute.IndexOf('=');
+                    var name = attribute[..equal];
+                    var value = attribute[(equal + 2)..^1];
+                    if (name.Equals("group-title", StringComparison.OrdinalIgnoreCase)) group = value.ToString();
+                    else if (name.Equals("tvg-logo", StringComparison.OrdinalIgnoreCase)) logo = value.ToString();
+                    else if (name.Equals("tvg-id", StringComparison.OrdinalIgnoreCase)) tvgId = value.ToString();
+                }
             }
             else if (!line.StartsWith('#') && !string.IsNullOrWhiteSpace(line) && title != null)
             {

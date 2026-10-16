@@ -68,12 +68,20 @@ try {
     Set-Content -LiteralPath $sentinel -Value 'synthetic test data'
     $hash = (Get-FileHash -LiteralPath $sentinel).Hash
     if ($PreviousSetup) {
+        $engineManifestPath = Join-Path $PSScriptRoot 'artifacts/publish/build-manifest.json'
+        $engineManifest = if (Test-Path $engineManifestPath) { Get-Content $engineManifestPath -Raw | ConvertFrom-Json } else { $null }
+        $oldEngineDirectory = Join-Path $install 'libvlc/win-x64'
+        if ($engineManifest.engine -eq 'mpv') {
+            New-Item -ItemType Directory -Force $oldEngineDirectory | Out-Null
+            Set-Content (Join-Path $oldEngineDirectory 'obsolete-engine.txt') 'synthetic old VLC program file'
+        }
         # Omit /DIR: the newer installer must remember the previous custom location.
         Run-Installer $setup @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-') 'version-upgrade'
         if ((Get-FileHash -LiteralPath $sentinel).Hash -ne $hash) { throw 'Version upgrade changed user data.' }
         $registeredVersion = (Get-ItemProperty -LiteralPath $registration).DisplayVersion
         if ($registeredVersion -ne $ExpectedVersion) { throw "Upgrade registered version $registeredVersion instead of $ExpectedVersion." }
         if (-not (Test-Path -LiteralPath (Join-Path $install 'HN-IPTV.exe'))) { throw 'Upgrade did not preserve the installation directory.' }
+        if ($engineManifest.engine -eq 'mpv' -and (Test-Path $oldEngineDirectory)) { throw 'mpv upgrade retained obsolete VLC engine files.' }
         Write-Host "Previous-version upgrade to $ExpectedVersion preserved data and installation location."
     }
     Run-Installer $setup $arguments 'reinstall'

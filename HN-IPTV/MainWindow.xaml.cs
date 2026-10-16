@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows.Threading;
 using HnIptv.Preferences;
+using HnIptv.Playback;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -8,6 +9,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Diagnostics;
@@ -31,6 +33,14 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, double> _groupOffsets = new();
     private PlayerSettings _playerSettings = new();
     private PictureInPictureWindow? _pip;
+    private readonly DispatcherTimer _infoTimer = new(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
+    private readonly DispatcherTimer _volumeDebounce = new() { Interval = TimeSpan.FromMilliseconds(50) };
+    private bool _readingInfo, _changingCaptions;
+    private StreamInfo _streamInfo = StreamInfo.Empty;
+    private Stopwatch? _tuneWatch;
+    private Channel? _playingChannel;
+    private bool _tuneSubmitted;
+    private long _tuneGeneration;
     private readonly Dictionary<string, DateTimeOffset> _failedTunes = new();
     private static string PlayerSettingsPath => Path.Combine(AppStorage.DataDirectory, "player-settings.json");
     private readonly LatestSaveQueue<PlayerSettings> _playerSettingsSaves = new(settings => settings.Save(PlayerSettingsPath));
@@ -50,6 +60,7 @@ public partial class MainWindow : Window
     private Task _startupLoad = Task.CompletedTask;
     private readonly PlaybackController _playback = new();
     private readonly DispatcherTimer _searchDebounce = new() { Interval = TimeSpan.FromMilliseconds(160) };
+    private readonly DispatcherTimer _groupSearchDebounce = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(160) };
     private readonly DispatcherTimer _rowDebounce = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private readonly HashSet<FrameworkElement> _realizedRows = new();
     private CancellationTokenSource _filterCts = new();
@@ -87,9 +98,15 @@ public partial class MainWindow : Window
         _librarySaves = new(snapshot => { using var timing = App.Measure("library.save"); _library.SaveSnapshot(snapshot); });
         _preferenceSaves = new(_preferences.SaveSnapshot);
         InitializeComponent();
+        CaptionsButton.Visibility = BuildInfo.Engine == "mpv" ? Visibility.Visible : Visibility.Collapsed;
         _playback.PlaybackError += () => Dispatcher.BeginInvoke(new Action(() =>
         { if (!_closing) SetStatus("Playback failed. Check the stream and provider permissions."); }));
+        _groupSearchDebounce.Tick += (_, _) => { _groupSearchDebounce.Stop(); _groupView?.Refresh();
+            if (GroupsList.SelectedItem == null) GroupsList.SelectedItem = _allGroups.FirstOrDefault(FilterGroup); };
         _searchDebounce.Tick += (_, _) => { _searchDebounce.Stop(); RefreshChannels(); };
+        _infoTimer.Tick += async (_, _) => await UpdateStreamInfoAsync();
+        _volumeDebounce.Tick += async (_, _) => { _volumeDebounce.Stop();
+            try { await _playback.VolumeAsync((int)VolumeSlider.Value); } catch (Exception ex) { App.LogException("playback.volume", ex); } };
         _rowDebounce.Tick += (_, _) => { _rowDebounce.Stop(); LoadVisibleRows(); };
         StateChanged += (_, _) =>
         {
@@ -145,6 +162,7 @@ public partial class MainWindow : Window
                 try { _playerSettings = PlayerSettings.Load(PlayerSettingsPath); }
                 catch (Exception ex) { App.LogException("settings.load", ex); }
             });
+            RenderCaptionsState(); ApplyColumnLayout();
             BufferSelector.SelectedIndex = _playerSettings.BufferMilliseconds <= 500 ? 0 : _playerSettings.BufferMilliseconds >= 3000 ? 2 : 1;
             if (_closing) return;
             _ = _logos.PruneAsync();
@@ -314,7 +332,8 @@ public partial class MainWindow : Window
             SetStatus("Connected. Fetching Xtream live TV channels...");
             App.LogDiagnostic("Xtream: account authenticated, requesting catalog");
             // Keep large provider JSON mapping/sorting off the WPF dispatcher thread.
-            var data = await client.GetLiveTvAsync(_libraryCts.Token);
+            var importToken = _libraryCts.Token;
+            var data = await Task.Run(() => client.GetLiveTvAsync(importToken), importToken);
             if (_closing) return;
             App.LogDiagnostic($"Xtream: catalog received ({data.Channels.Count} channels, {data.Groups.Count} groups)");
             var format = client.SelectedFormat;
@@ -422,8 +441,7 @@ public partial class MainWindow : Window
     private void GroupSearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (_groupView == null || _loadingCatalog) return;
-        _groupView.Refresh();
-        if (GroupsList.SelectedItem == null) GroupsList.SelectedItem = _allGroups.FirstOrDefault(FilterGroup);
+        _groupSearchDebounce.Stop(); _groupSearchDebounce.Start();
     }
     private void GroupOptions_Click(object sender, RoutedEventArgs e)
     {
@@ -477,6 +495,7 @@ public partial class MainWindow : Window
     private void LoadVisibleRows()
     {
         if (!_catalogReady || _closing || _minimized) return;
+        if (_tuneWatch != null && _tuneWatch.Elapsed < TimeSpan.FromSeconds(10)) { _rowDebounce.Start(); return; }
         foreach (var row in _realizedRows.ToArray())
             if (row.IsVisible && row.DataContext is Channel channel)
             {
@@ -542,6 +561,14 @@ public partial class MainWindow : Window
         var profile = _activePlaylist;
         var source = _source;
         var xtream = _xtream;
+        // Cached guide hits must not wait behind two slow provider requests.
+        if (profile != null && profile.ProviderEpgFetchedAt.TryGetValue(requestKey, out var cachedAt) &&
+            DateTimeOffset.UtcNow - cachedAt < TimeSpan.FromMinutes(Math.Clamp(profile.EpgRefreshMinutes, 5, 1440)))
+        {
+            var cached = Task.FromResult<IReadOnlyList<ProgramEntry>>(profile.CachedProviderPrograms.GetValueOrDefault(requestKey) ?? []);
+            _epgRequests[requestKey] = cached;
+            return cached;
+        }
         if (_epgRequests.Count >= 128 && !ReferenceEquals(_selectedChannel, channel))
             return Task.FromCanceled<IReadOnlyList<ProgramEntry>>(new CancellationToken(true));
         var task = LoadProgramsAsync();
@@ -613,13 +640,23 @@ public partial class MainWindow : Window
         if (!_touchHeld && sender is ListBoxItem item && e.ClickCount == 1) BeginHold(item);
         else if (e.ClickCount > 1) EndHold();
     }
-    private void ChannelItem_MouseUp(object sender, MouseButtonEventArgs e) => EndHold();
+    private async void ChannelItem_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        var channel = !_touchHeld && e.ClickCount == 1 && sender == _pressedItem ? _pressedChannel : null;
+        EndHold();
+        if (channel != null) { ChannelsList.SelectedItem = channel; await PlaySelectedAsync(); }
+    }
     private void ChannelItem_MouseLeave(object sender, MouseEventArgs e) => EndHold();
     private void ChannelItem_TouchDown(object sender, TouchEventArgs e)
     {
         if (sender is ListBoxItem item) { _touchHeld = true; BeginHold(item); }
     }
-    private void ChannelItem_TouchUp(object sender, TouchEventArgs e) => EndHold();
+    private async void ChannelItem_TouchUp(object sender, TouchEventArgs e)
+    {
+        var channel = sender == _pressedItem ? _pressedChannel : null;
+        EndHold(); e.Handled = true;
+        if (channel != null) { ChannelsList.SelectedItem = channel; await PlaySelectedAsync(); }
+    }
 
     // Clear ownership before cancellation: empty categories and repeated Stop events
     // can return without creating a replacement source.
@@ -662,6 +699,9 @@ public partial class MainWindow : Window
         EpgState.Text = "Loading...";
         try
         {
+            // Allow a click's playback request to get ahead of guide HTTP work.
+            await Task.Delay(180, cts.Token);
+            while (_tuneWatch != null && _tuneWatch.Elapsed < TimeSpan.FromSeconds(10)) await Task.Delay(200, cts.Token);
             var entries = await GetProgramsAsync(channel, _previewCts.Token).WaitAsync(cts.Token);
             if (cts.IsCancellationRequested) return;
             foreach (var item in entries) _programs.Add(item);
@@ -672,13 +712,14 @@ public partial class MainWindow : Window
         catch (Exception) { if (!cts.IsCancellationRequested) EpgState.Text = "Guide unavailable"; }
     }
 
-    private async void ChannelsList_DoubleClick(object sender, MouseButtonEventArgs e) => await PlaySelectedAsync();
+
     private async void Play_Click(object sender, RoutedEventArgs e) => await TuneSelectedAsync(forceRetry: true);
 
     private Task PlaySelectedAsync() => TuneSelectedAsync(forceRetry: false);
     private async Task TuneSelectedAsync(bool forceRetry)
     {
         if (_closing || _loadingCatalog || ChannelsList.SelectedItem is not Channel channel) return;
+        if (!forceRetry && ReferenceEquals(channel, _playingChannel) && _tuneCts != null && !_tuneCts.IsCancellationRequested) return;
         string failureKey = ChannelPreferences.Hash(_providerKey + "|" + channel.GroupId + "|" + channel.Id);
         foreach (var key in _failedTunes.Where(x => x.Value <= DateTimeOffset.UtcNow).Select(x => x.Key).ToArray()) _failedTunes.Remove(key);
         if (!forceRetry && _failedTunes.ContainsKey(failureKey))
@@ -688,6 +729,10 @@ public partial class MainWindow : Window
         _tuneCts = cts;
         try
         {
+            _tuneGeneration++;
+            _playingChannel = channel; _tuneWatch = Stopwatch.StartNew(); _tuneSubmitted = false;
+            _streamInfo = StreamInfo.Empty; RenderStreamInfo();
+            _infoTimer.Interval = TimeSpan.FromMilliseconds(200); _infoTimer.Start();
             SetStatus("Tuning " + channel.Name + "...");
             string url;
             if (_source == SourceKind.Xtream)
@@ -700,11 +745,16 @@ public partial class MainWindow : Window
             if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
                 throw new InvalidOperationException("The source did not provide a valid stream URL.");
             using var timing = App.Measure("playback.tune_request");
+#if USE_MPV
+            await _playback.CaptionsAsync(_playerSettings.CaptionsEnabled, cts.Token);
+#endif
             await _playback.PlayAsync(uri, VideoView.VideoHandle, (int)VolumeSlider.Value, cts.Token, _playerSettings.BufferMilliseconds);
             if (cts.IsCancellationRequested || _closing) return;
             _failedTunes.Remove(failureKey);
-            if (_pip != null) _pip.Title = "HN-IPTV — " + channel.Name;
-            SetStatus("Playing " + channel.Name + ".");
+            _pip?.SetChannelTitle(channel.Name);
+            _tuneSubmitted = true;
+            SetStatus("Buffering " + channel.Name + "...");
+            await UpdateStreamInfoAsync();
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -726,6 +776,8 @@ public partial class MainWindow : Window
     }
     private async Task StopPlaybackAsync()
     {
+        _tuneGeneration++; _tuneSubmitted = false; _tuneWatch = null; _playingChannel = null;
+        _infoTimer.Stop(); _streamInfo = StreamInfo.Empty; RenderStreamInfo();
         try { await _playback.StopAsync(); } catch (Exception ex) { App.LogException("playback.stop", ex); }
     }
     private async void Stop_Click(object sender, RoutedEventArgs e)
@@ -751,9 +803,85 @@ public partial class MainWindow : Window
         if ((GroupsList.SelectedItem as ChannelGroup)?.Id == "fav") RefreshChannels();
     }
 
-    private async void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    private void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        try { await _playback.VolumeAsync((int)e.NewValue); } catch (Exception ex) { App.LogException("playback.volume", ex); }
+        if (_closing) return;
+        _volumeDebounce.Stop(); _volumeDebounce.Start();
+    }
+
+    private void ApplyColumnLayout()
+    {
+        GroupsColumn.MinWidth = 160; ChannelsColumn.MinWidth = 220;
+        GroupsColumn.Width = new GridLength(_playerSettings.GroupsColumnWeight, GridUnitType.Star);
+        ChannelsColumn.Width = new GridLength(_playerSettings.ChannelsColumnWeight, GridUnitType.Star);
+        PlayerColumn.Width = new GridLength(_playerSettings.PlayerColumnWeight, GridUnitType.Star);
+    }
+    private void ColumnDivider_DragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        if (_isFullScreen || _closing || !_libraryLoadedSuccessfully) return;
+        _playerSettings = _playerSettings with { GroupsColumnWeight = GroupsColumn.ActualWidth,
+            ChannelsColumnWeight = ChannelsColumn.ActualWidth, PlayerColumnWeight = PlayerColumn.ActualWidth };
+        ApplyColumnLayout(); SavePlayerSettings();
+    }
+    private async void Captions_Click(object sender, RoutedEventArgs e) => await ToggleCaptionsAsync();
+    private void RenderCaptionsState()
+    {
+        CaptionsButton.Content = _playerSettings.CaptionsEnabled ? "CC: On" : "CC: Off";
+        System.Windows.Automation.AutomationProperties.SetName(CaptionsButton,
+            _playerSettings.CaptionsEnabled ? "Closed captions on" : "Closed captions off");
+        _pip?.SetCaptionsEnabled(_playerSettings.CaptionsEnabled);
+    }
+    private async Task ToggleCaptionsAsync()
+    {
+#if USE_MPV
+        if (_closing || _changingCaptions) return;
+        _changingCaptions = true; CaptionsButton.IsEnabled = false;
+        try {
+            bool enabled = !_playerSettings.CaptionsEnabled;
+            await _playback.CaptionsAsync(enabled);
+            if (_closing) return;
+            _playerSettings = _playerSettings with { CaptionsEnabled = enabled };
+            RenderCaptionsState(); SavePlayerSettings();
+            SetStatus(enabled ? "Closed captions on — shown when supplied by the channel." : "Closed captions off.");
+        } catch (Exception ex) { App.LogException("playback.captions", ex); SetStatus("Unable to change closed captions."); }
+        finally { _changingCaptions = false; CaptionsButton.IsEnabled = true; }
+#else
+        await Task.CompletedTask;
+#endif
+    }
+    private void StreamInfo_Click(object sender, RoutedEventArgs e)
+    {
+        StreamInfoPanel.Visibility = StreamInfoPanel.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+        StreamInfoButton.Content = StreamInfoPanel.Visibility == Visibility.Visible ? "Hide info" : "Info";
+        RenderStreamInfo();
+        if (StreamInfoPanel.Visibility == Visibility.Visible) { _infoTimer.Start(); _ = UpdateStreamInfoAsync(); }
+    }
+    private void RenderStreamInfo()
+    {
+        StreamVideoInfo.Text = "Video: " + _streamInfo.ResolutionText + " · " + _streamInfo.FrameRateText +
+            (string.IsNullOrWhiteSpace(_streamInfo.VideoCodec) ? "" : " · " + _streamInfo.VideoCodec);
+        StreamBitrateInfo.Text = "Input bitrate: " + _streamInfo.BitrateText + " (received data; varies with buffering)";
+        StreamAudioInfo.Text = "Audio: " + _streamInfo.AudioText;
+    }
+    private async Task UpdateStreamInfoAsync()
+    {
+        if (_readingInfo || _closing || !_tuneSubmitted || (_minimized && _pip == null)) return;
+        if (_tuneWatch == null && _pip == null && StreamInfoPanel.Visibility != Visibility.Visible) { _infoTimer.Stop(); return; }
+        _readingInfo = true;
+        var generation = _tuneGeneration;
+        try {
+            var info = await _playback.ReadInfoAsync();
+            if (info == null || _closing || generation != _tuneGeneration) return;
+            _streamInfo = info;
+            _pip?.SetAspect(info.AspectRatio);
+            if (StreamInfoPanel.Visibility == Visibility.Visible) RenderStreamInfo();
+            if (_tuneWatch != null && info.Playing && info.PositionMilliseconds > 0) {
+                App.LogDiagnostic($"playback.time_to_progress_ms={_tuneWatch.Elapsed.TotalMilliseconds:F1}");
+                _tuneWatch = null; _infoTimer.Interval = TimeSpan.FromSeconds(1);
+                SetStatus("Playing " + _playingChannel?.Name + ".");
+            }
+        } catch (Exception ex) { App.LogException("playback.info", ex); }
+        finally { _readingInfo = false; }
     }
 
     private void Fullscreen_Click(object sender, RoutedEventArgs e) => ToggleFullscreen();
@@ -796,8 +924,11 @@ public partial class MainWindow : Window
                     _playerSettings = _playerSettings with { PipLeft = settings.PipLeft, PipTop = settings.PipTop,
                         PipWidth = settings.PipWidth, PipHeight = settings.PipHeight };
                     SavePlayerSettings();
-                });
+                }, () => _ = ToggleCaptionsAsync(), _playerSettings.CaptionsEnabled);
             _pip = pip;
+            pip.SetChannelTitle(_playingChannel?.Name ?? "HN-IPTV");
+            pip.SetAspect(_streamInfo.AspectRatio);
+            _infoTimer.Start();
             pip.Closed += async (_, _) =>
             {
                 _pip = null;
@@ -820,6 +951,10 @@ public partial class MainWindow : Window
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape && _isFullScreen) { ToggleFullscreen(); e.Handled = true; }
+        else if (e.Key == Key.P && !e.IsRepeat && Keyboard.Modifiers == ModifierKeys.None && Keyboard.FocusedElement is not TextBoxBase && Keyboard.FocusedElement is not PasswordBox)
+        { TogglePictureInPicture(); e.Handled = true; }
+        else if (e.Key == Key.C && !e.IsRepeat && Keyboard.Modifiers == ModifierKeys.None && Keyboard.FocusedElement is not TextBoxBase && Keyboard.FocusedElement is not PasswordBox)
+        { _ = ToggleCaptionsAsync(); e.Handled = BuildInfo.Engine == "mpv"; }
         else if (e.Key == Key.F && Keyboard.FocusedElement is not TextBox)
         { ToggleFullscreen(); e.Handled = true; }
     }
@@ -860,12 +995,15 @@ public partial class MainWindow : Window
             StatusStrip.Visibility = Visibility.Collapsed;
             HeaderRow.Height = new GridLength(0);
             FooterRow.Height = new GridLength(0);
+            GroupsDivider.Visibility = PlayerDivider.Visibility = Visibility.Collapsed;
+            GroupsColumn.MinWidth = ChannelsColumn.MinWidth = 0;
             GroupsColumn.Width = new GridLength(0);
             ChannelsColumn.Width = new GridLength(0);
             PlayerRoot.Margin = new Thickness(0);
             PlayerTitleBar.Visibility = Visibility.Collapsed;
             GuideRoot.Visibility = Visibility.Collapsed;
             PlaybackButtons.Visibility = Visibility.Collapsed;
+            StreamInfoPanel.Visibility = Visibility.Collapsed;
             PlayerTitleRow.Height = new GridLength(0);
             PlayerGuideRow.Height = new GridLength(0);
             PlayerControlsRow.Height = new GridLength(0);
@@ -884,12 +1022,13 @@ public partial class MainWindow : Window
             StatusStrip.Visibility = Visibility.Visible;
             HeaderRow.Height = new GridLength(72);
             FooterRow.Height = new GridLength(35);
-            GroupsColumn.Width = new GridLength(215);
-            ChannelsColumn.Width = new GridLength(390);
+            ApplyColumnLayout();
+            GroupsDivider.Visibility = PlayerDivider.Visibility = Visibility.Visible;
             PlayerRoot.Margin = new Thickness(20, 19, 20, 12);
             PlayerTitleBar.Visibility = Visibility.Visible;
             GuideRoot.Visibility = Visibility.Visible;
             PlaybackButtons.Visibility = Visibility.Visible;
+            if ((string)StreamInfoButton.Content == "Hide info") StreamInfoPanel.Visibility = Visibility.Visible;
             PlayerTitleRow.Height = GridLength.Auto;
             PlayerGuideRow.Height = new GridLength(2, GridUnitType.Star);
             PlayerControlsRow.Height = GridLength.Auto;
@@ -972,7 +1111,7 @@ public partial class MainWindow : Window
             _ => profile.LocalPath.ToLowerInvariant()
         };
         var providerKey = ChannelPreferences.ProviderKey(profile.Type, identity);
-        
+
         _xtream?.Dispose(); _xtream = null;
         if (!await SetChannelsAsync(profile.CachedChannels,
             profile.CachedChannels.Select(ch => new ChannelGroup(ch.GroupId, ch.GroupName)),
@@ -1188,8 +1327,8 @@ public partial class MainWindow : Window
         _closing = true;
         if (_pip != null) { _pip.Close(); if (_pip != null) { _closing = false; return; } }
         TopBar.IsEnabled = false;
-        _epgClock.Stop(); _refreshTimer.Stop(); _saveSelectionDebounce.Stop();
-        _searchDebounce.Stop(); _rowDebounce.Stop(); EndHold();
+        _epgClock.Stop(); _refreshTimer.Stop(); _saveSelectionDebounce.Stop(); _infoTimer.Stop(); _volumeDebounce.Stop();
+        _searchDebounce.Stop(); _groupSearchDebounce.Stop(); _rowDebounce.Stop(); EndHold();
         _libraryCts.Cancel(); CancelAndClear(ref _epgCts); CancelAndClear(ref _tuneCts);
         _previewCts.Cancel(); _filterCts.Cancel();
         try

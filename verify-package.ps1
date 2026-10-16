@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$PublishDirectory, [ValidateSet('vlc','mpv')][string]$Engine = 'vlc')
+param([Parameter(Mandatory)][string]$PublishDirectory, [ValidateSet('vlc','mpv','mpc')][string]$Engine = 'mpv')
 $ErrorActionPreference = 'Stop'
 $required = @('HN-IPTV.exe','HN-IPTV.dll','HN-IPTV.Core.dll','HN-IPTV.deps.json','HN-IPTV.runtimeconfig.json',
     'coreclr.dll','hostfxr.dll','PresentationFramework.dll','build-manifest.json')
@@ -7,10 +7,13 @@ if ($Engine -eq 'vlc') {
     'libvlc/win-x64/libvlc.dll','libvlc/win-x64/libvlccore.dll',
     'libvlc/win-x64/plugins/demux/libadaptive_plugin.dll','libvlc/win-x64/plugins/demux/libts_plugin.dll',
     'libvlc/win-x64/plugins/codec/libavcodec_plugin.dll')
-    if (Test-Path (Join-Path $PublishDirectory 'libmpv-2.dll')) { throw 'VLC package contains mpv.' }
+    if ((Test-Path (Join-Path $PublishDirectory 'libmpv-2.dll')) -or (Test-Path (Join-Path $PublishDirectory 'mpc-hc'))) { throw 'VLC package contains mpv.' }
+} elseif ($Engine -eq 'mpc') {
+    $required += @('mpc-hc/mpc-hc64.exe','mpc-hc/LAVFilters64/LAVVideo.ax','mpc-hc/COPYING.txt')
+    if ((Test-Path (Join-Path $PublishDirectory 'libvlc')) -or (Test-Path (Join-Path $PublishDirectory 'libmpv-2.dll'))) { throw 'MPC-HC package contains another engine.' }
 } else {
     $required += 'libmpv-2.dll'
-    if ((Test-Path (Join-Path $PublishDirectory 'libvlc')) -or (Test-Path (Join-Path $PublishDirectory 'LibVLCSharp.dll'))) { throw 'mpv package contains VLC.' }
+    if ((Test-Path (Join-Path $PublishDirectory 'libvlc')) -or (Test-Path (Join-Path $PublishDirectory 'LibVLCSharp.dll')) -or (Test-Path (Join-Path $PublishDirectory 'mpc-hc'))) { throw 'mpv package contains VLC.' }
 }
 foreach ($relative in $required) {
     if (-not (Test-Path (Join-Path $PublishDirectory $relative))) { throw "Incomplete publish: missing $relative" }

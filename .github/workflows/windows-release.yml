@@ -4,7 +4,7 @@ on:
     inputs:
       version:
         description: Version to build
-        default: '0.8.0'
+        default: '0.9.2'
         required: true
       publish_release:
         description: Publish the tested packages as a GitHub Release
@@ -43,12 +43,12 @@ jobs:
         shell: pwsh
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-          REQUESTED_VERSION: ${{ inputs.version || '0.8.0' }}
-          PUBLISH_REQUESTED: ${{ github.event_name == 'release' || inputs.publish_release == true }}
+          REQUESTED_VERSION: ${{ inputs.version || '0.9.2' }}
+          PUBLISH_REQUESTED: ${{ github.event_name == 'release' || inputs.publish_release == true || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         run: |
           $version = $env:REQUESTED_VERSION
           if ($env:RELEASE_TAG) {
-            if ($env:RELEASE_TAG -notmatch '^v(\d+\.\d+\.\d+)$') { throw 'Use a version tag such as v0.8.0.' }
+            if ($env:RELEASE_TAG -notmatch '^v(\d+\.\d+\.\d+)$') { throw 'Use a version tag such as v0.9.2.' }
             $version = $Matches[1]
           }
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must be major.minor.patch.' }
@@ -57,7 +57,7 @@ jobs:
       - name: Restore
         shell: pwsh
         run: |
-          dotnet restore HN-IPTV/HN-IPTV.csproj -r win-x64 -p:PlaybackEngine=vlc -p:SelfContained=true
+          dotnet restore HN-IPTV/HN-IPTV.csproj -r win-x64 -p:PlaybackEngine=mpv -p:SelfContained=true
           if ($LASTEXITCODE -ne 0) { throw 'Application restore failed.' }
           dotnet restore HN-IPTV.Core.SmokeTests/HN-IPTV.Core.SmokeTests.csproj
           if ($LASTEXITCODE -ne 0) { throw 'Test restore failed.' }
@@ -157,7 +157,7 @@ jobs:
             gh release upload "$RELEASE_TAG" dist/HN-IPTV-Setup.exe dist/HN-IPTV-Portable.zip --clobber
           else
             printf 'Install the new setup over the existing version to preserve saved data.\n' > release-notes.txt
-            gh release create "$RELEASE_TAG" --target "$SOURCE_COMMIT" --title "HN-IPTV $RELEASE_TAG" --notes-file release-notes.txt dist/HN-IPTV-Setup.exe dist/HN-IPTV-Portable.zip
+            gh release create "$RELEASE_TAG" --latest --target "$SOURCE_COMMIT" --title "HN-IPTV $RELEASE_TAG" --notes-file release-notes.txt dist/HN-IPTV-Setup.exe dist/HN-IPTV-Portable.zip
           fi
           printf '\nSHA-256 checksums:\n```text\n' >> release-notes.txt
           cat dist/SHA256SUMS.txt >> release-notes.txt
