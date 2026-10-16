@@ -9,6 +9,8 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using System.Windows.Input;
+using System.Windows.Interop;
 using HnIptv;
 using HnIptv.Models;
 using HnIptv.Playback;
@@ -23,7 +25,7 @@ internal static class Program
         AppStorage.TestDataDirectory = Path.Combine(root, "data");
         string report = args.FirstOrDefault() ?? Path.Combine(Environment.CurrentDirectory, "windows-smoke.json");
         var clock = Stopwatch.StartNew();
-        int exit = 1; bool started = false;
+        int exit = 1; bool started = false; string stage = "startup";
         var results = new Dictionary<string, object>();
         using var server = new FixtureServer(Path.Combine(AppContext.BaseDirectory, "fixtures"));
         var app = new App(); app.InitializeComponent();
@@ -110,16 +112,24 @@ internal static class Program
                 await (Task)Invoke(window, "SetChannelsAsync", channels, new[] { new ChannelGroup("test", "Test"), new ChannelGroup("empty", "Empty") }, kind, "Test", "test", false)!;
                 await UntilAsync(() => Task.FromResult(channelList.Items.Count == 2));
                 channelList.SelectedIndex = 0;
+                stage = "initial tune";
                 var initialTune = Stopwatch.StartNew();
-                await (Task)Invoke(window, "PlaySelectedAsync")!;
+                channelList.UpdateLayout();
+                var row = (ListBoxItem)channelList.ItemContainerGenerator.ContainerFromIndex(0);
+                var click = row.PointToScreen(new Point(row.ActualWidth / 2, row.ActualHeight / 2));
+                SetCursorPos((int)click.X, (int)click.Y);
+                mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero); mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
                 await UntilAsync(async () => (await controller.ProgressAsync()).Playing);
+                results["single_click_playback"] = true;
                 results["initial_tune_progress_ms"] = initialTune.Elapsed.TotalMilliseconds;
                 results["mpeg_ts_started"] = true;
+                stage = "HLS tune";
                 channelList.SelectedIndex = 1;
                 await (Task)Invoke(window, "PlaySelectedAsync")!;
                 await UntilAsync(async () => (await controller.ProgressAsync()).Playing);
                 results["hls_started"] = true;
                 await Task.Delay(500);
+                stage = "stream information";
                 StreamInfo? stream = null;
                 await UntilAsync(async () => { stream = await controller.ReadInfoAsync(); return stream != null && (BuildInfo.Engine == "mpc" || stream.Width > 0); });
                 results["stream_resolution"] = stream!.ResolutionText;
@@ -130,6 +140,11 @@ internal static class Program
                 Invoke(window, "StreamInfo_Click", window, new RoutedEventArgs());
                 var infoPanel = (FrameworkElement)window.FindName("StreamInfoPanel");
                 if (infoPanel.Visibility != Visibility.Visible) throw new InvalidOperationException("Stream info toggle did not open.");
+                if (BuildInfo.Engine != "mpc") {
+                    await UntilAsync(() => Task.FromResult(((TextBlock)window.FindName("StreamVideoInfo")).Text.Contains("160 × 90") &&
+                        ((TextBlock)window.FindName("StreamAudioInfo")).Text.Contains("44.1")));
+                    results["stream_info_panel_live_values"] = true;
+                }
                 Invoke(window, "StreamInfo_Click", window, new RoutedEventArgs());
                 if (infoPanel.Visibility != Visibility.Collapsed) throw new InvalidOperationException("Stream info toggle did not close.");
                 results["stream_info_toggle"] = true;
@@ -155,6 +170,7 @@ internal static class Program
                     tuneTimes.Add(tuneClock.Elapsed.TotalMilliseconds);
                 }
                 results["time_to_progress_ms"] = tuneTimes; // Decoder progress, not proof of a rendered first frame.
+                stage = "rapid tuning";
                 var rapidTunes = new List<Task>();
                 for (int i = 0; i < 10; i++) { channelList.SelectedIndex = i % 2; rapidTunes.Add((Task)Invoke(window, "PlaySelectedAsync")!); }
                 await Task.WhenAll(rapidTunes);
@@ -162,9 +178,11 @@ internal static class Program
                 results["rapid_tune_requests"] = 10;
                 var host = (NativeVideoHost)typeof(MainWindow).GetField("VideoView", Private | BindingFlags.Public)!.GetValue(window)!;
                 var originalHandle = host.VideoHandle;
+                stage = "PiP";
                 for (int i = 0; i < 5; i++)
                 {
-                    Invoke(window, "TogglePictureInPicture");
+                    Invoke(window, "Window_PreviewKeyDown", window, new KeyEventArgs(Keyboard.PrimaryDevice,
+                        PresentationSource.FromVisual(window), Environment.TickCount, Key.P));
                     var pip = (PictureInPictureWindow?)typeof(MainWindow).GetField("_pip", Private)!.GetValue(window);
                     if (pip == null) throw new InvalidOperationException("PiP failed to open.");
                     await UntilAsync(() => Task.FromResult(pip.IsLoaded));
@@ -173,6 +191,23 @@ internal static class Program
                     pip.Width = 600; await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
                     if (pip.WindowStyle != WindowStyle.None || Math.Abs(pip.ActualWidth / pip.ActualHeight - 4d / 3) > 0.02)
                         throw new InvalidOperationException("PiP chrome or aspect constraints failed.");
+                    if (i == 0) {
+                        var grip = ((List<Window>)typeof(PictureInPictureWindow).GetField("_resizeHandles", Private)!.GetValue(pip)!)[7];
+                        var start = grip.PointToScreen(new Point(3, 3));
+                        double originalWidth = pip.ActualWidth;
+                        SetCursorPos((int)start.X, (int)start.Y);
+                        // Native button input enters the real Windows sizing loop.
+                        var drag = Task.Run(async () => {
+                            mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero);
+                            await Task.Delay(200);
+                            SetCursorPos((int)start.X + 80, (int)start.Y + 60);
+                            await Task.Delay(200); mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero);
+                        });
+                        await drag; await Task.Delay(200);
+                        if (Math.Abs(pip.ActualWidth - originalWidth) < 20 || Math.Abs(pip.ActualWidth / pip.ActualHeight - 4d / 3) > 0.03)
+                            throw new InvalidOperationException("Native PiP resize drag did not preserve aspect.");
+                        results["pip_native_resize_drag"] = true;
+                    }
                     pip.ShowControls(false);
                     if (pip.ControlsVisible) throw new InvalidOperationException("PiP bars remained visible.");
                     pip.ShowControls(true);
@@ -195,7 +230,9 @@ internal static class Program
                     await Task.Delay(300);
                     if (pip.WindowState == WindowState.Minimized || !pip.IsVisible || !(await controller.ProgressAsync()).Playing)
                         throw new InvalidOperationException("PiP did not survive main-window minimize.");
-                    pip.Close(); window.WindowState = WindowState.Normal;
+                    pip.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(pip), Environment.TickCount, Key.P) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+                    if ((PictureInPictureWindow?)typeof(MainWindow).GetField("_pip", Private)!.GetValue(window) != null) throw new InvalidOperationException("P did not return from PiP.");
+                    window.WindowState = WindowState.Normal;
                     await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
                     if (host.VideoHandle != originalHandle || !(await controller.ProgressAsync()).Playing)
                         throw new InvalidOperationException("PiP replaced the video target or interrupted playback.");
@@ -215,6 +252,7 @@ internal static class Program
                 }
                 results["minimize_restore_count"] = restoreTimes.Count;
                 results["restore_ms"] = restoreTimes;
+                stage = "fullscreen";
                 var before = await controller.ProgressAsync();
                 Invoke(window, "ToggleFullscreen"); await Task.Delay(1000);
                 Invoke(window, "ToggleFullscreen");
@@ -249,12 +287,21 @@ internal static class Program
             }
         };
         // A dispatcher/native deadlock must fail CI instead of consuming the entire job.
-        _ = Task.Run(async () => { await Task.Delay(TimeSpan.FromSeconds(120)); Environment.Exit(2); });
+        _ = Task.Run(async () => {
+            await Task.Delay(TimeSpan.FromSeconds(120));
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(report))!);
+            File.WriteAllText(report, JsonSerializer.Serialize(new { passed = false, engine = BuildInfo.Engine, error_type = "WatchdogTimeout", stage }));
+            foreach (var child in Process.GetProcessesByName("mpc-hc64")) {
+                try { if (child.MainModule?.FileName.StartsWith(AppContext.BaseDirectory, StringComparison.OrdinalIgnoreCase) == true) child.Kill(true); } catch { }
+            }
+            Environment.Exit(2);
+        });
         app.Run();
         try { Directory.Delete(root, true); } catch (IOException) { }
         return exit;
     }
     [StructLayout(LayoutKind.Sequential)] private struct CursorPoint { public int X, Y; }
+    [DllImport("user32.dll")] private static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out CursorPoint point);
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
     private static object? Invoke(MainWindow window, string method, params object[] args)

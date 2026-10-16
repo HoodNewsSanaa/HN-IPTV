@@ -9,6 +9,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Diagnostics;
@@ -59,6 +60,7 @@ public partial class MainWindow : Window
     private Task _startupLoad = Task.CompletedTask;
     private readonly PlaybackController _playback = new();
     private readonly DispatcherTimer _searchDebounce = new() { Interval = TimeSpan.FromMilliseconds(160) };
+    private readonly DispatcherTimer _groupSearchDebounce = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(160) };
     private readonly DispatcherTimer _rowDebounce = new() { Interval = TimeSpan.FromMilliseconds(100) };
     private readonly HashSet<FrameworkElement> _realizedRows = new();
     private CancellationTokenSource _filterCts = new();
@@ -98,6 +100,8 @@ public partial class MainWindow : Window
         InitializeComponent();
         _playback.PlaybackError += () => Dispatcher.BeginInvoke(new Action(() =>
         { if (!_closing) SetStatus("Playback failed. Check the stream and provider permissions."); }));
+        _groupSearchDebounce.Tick += (_, _) => { _groupSearchDebounce.Stop(); _groupView?.Refresh();
+            if (GroupsList.SelectedItem == null) GroupsList.SelectedItem = _allGroups.FirstOrDefault(FilterGroup); };
         _searchDebounce.Tick += (_, _) => { _searchDebounce.Stop(); RefreshChannels(); };
         _infoTimer.Tick += async (_, _) => await UpdateStreamInfoAsync();
         _volumeDebounce.Tick += async (_, _) => { _volumeDebounce.Stop();
@@ -435,8 +439,7 @@ public partial class MainWindow : Window
     private void GroupSearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (_groupView == null || _loadingCatalog) return;
-        _groupView.Refresh();
-        if (GroupsList.SelectedItem == null) GroupsList.SelectedItem = _allGroups.FirstOrDefault(FilterGroup);
+        _groupSearchDebounce.Stop(); _groupSearchDebounce.Start();
     }
     private void GroupOptions_Click(object sender, RoutedEventArgs e)
     {
@@ -490,6 +493,7 @@ public partial class MainWindow : Window
     private void LoadVisibleRows()
     {
         if (!_catalogReady || _closing || _minimized) return;
+        if (_tuneWatch != null && _tuneWatch.Elapsed < TimeSpan.FromSeconds(10)) { _rowDebounce.Start(); return; }
         foreach (var row in _realizedRows.ToArray())
             if (row.IsVisible && row.DataContext is Channel channel)
             {
@@ -634,13 +638,23 @@ public partial class MainWindow : Window
         if (!_touchHeld && sender is ListBoxItem item && e.ClickCount == 1) BeginHold(item);
         else if (e.ClickCount > 1) EndHold();
     }
-    private void ChannelItem_MouseUp(object sender, MouseButtonEventArgs e) => EndHold();
+    private async void ChannelItem_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        var channel = !_touchHeld && e.ClickCount == 1 && sender == _pressedItem ? _pressedChannel : null;
+        EndHold();
+        if (channel != null) { ChannelsList.SelectedItem = channel; await PlaySelectedAsync(); }
+    }
     private void ChannelItem_MouseLeave(object sender, MouseEventArgs e) => EndHold();
     private void ChannelItem_TouchDown(object sender, TouchEventArgs e)
     {
         if (sender is ListBoxItem item) { _touchHeld = true; BeginHold(item); }
     }
-    private void ChannelItem_TouchUp(object sender, TouchEventArgs e) => EndHold();
+    private async void ChannelItem_TouchUp(object sender, TouchEventArgs e)
+    {
+        var channel = sender == _pressedItem ? _pressedChannel : null;
+        EndHold(); e.Handled = true;
+        if (channel != null) { ChannelsList.SelectedItem = channel; await PlaySelectedAsync(); }
+    }
 
     // Clear ownership before cancellation: empty categories and repeated Stop events
     // can return without creating a replacement source.
@@ -683,6 +697,9 @@ public partial class MainWindow : Window
         EpgState.Text = "Loading...";
         try
         {
+            // Allow a click's playback request to get ahead of guide HTTP work.
+            await Task.Delay(180, cts.Token);
+            while (_tuneWatch != null && _tuneWatch.Elapsed < TimeSpan.FromSeconds(10)) await Task.Delay(200, cts.Token);
             var entries = await GetProgramsAsync(channel, _previewCts.Token).WaitAsync(cts.Token);
             if (cts.IsCancellationRequested) return;
             foreach (var item in entries) _programs.Add(item);
@@ -693,13 +710,14 @@ public partial class MainWindow : Window
         catch (Exception) { if (!cts.IsCancellationRequested) EpgState.Text = "Guide unavailable"; }
     }
 
-    private async void ChannelsList_DoubleClick(object sender, MouseButtonEventArgs e) => await PlaySelectedAsync();
+
     private async void Play_Click(object sender, RoutedEventArgs e) => await TuneSelectedAsync(forceRetry: true);
 
     private Task PlaySelectedAsync() => TuneSelectedAsync(forceRetry: false);
     private async Task TuneSelectedAsync(bool forceRetry)
     {
         if (_closing || _loadingCatalog || ChannelsList.SelectedItem is not Channel channel) return;
+        if (!forceRetry && ReferenceEquals(channel, _playingChannel) && _tuneCts != null && !_tuneCts.IsCancellationRequested) return;
         string failureKey = ChannelPreferences.Hash(_providerKey + "|" + channel.GroupId + "|" + channel.Id);
         foreach (var key in _failedTunes.Where(x => x.Value <= DateTimeOffset.UtcNow).Select(x => x.Key).ToArray()) _failedTunes.Remove(key);
         if (!forceRetry && _failedTunes.ContainsKey(failureKey))
@@ -888,6 +906,8 @@ public partial class MainWindow : Window
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape && _isFullScreen) { ToggleFullscreen(); e.Handled = true; }
+        else if (e.Key == Key.P && !e.IsRepeat && Keyboard.Modifiers == ModifierKeys.None && Keyboard.FocusedElement is not TextBoxBase && Keyboard.FocusedElement is not PasswordBox)
+        { TogglePictureInPicture(); e.Handled = true; }
         else if (e.Key == Key.F && Keyboard.FocusedElement is not TextBox)
         { ToggleFullscreen(); e.Handled = true; }
     }
@@ -1042,7 +1062,7 @@ public partial class MainWindow : Window
             _ => profile.LocalPath.ToLowerInvariant()
         };
         var providerKey = ChannelPreferences.ProviderKey(profile.Type, identity);
-        
+
         _xtream?.Dispose(); _xtream = null;
         if (!await SetChannelsAsync(profile.CachedChannels,
             profile.CachedChannels.Select(ch => new ChannelGroup(ch.GroupId, ch.GroupName)),
@@ -1259,7 +1279,7 @@ public partial class MainWindow : Window
         if (_pip != null) { _pip.Close(); if (_pip != null) { _closing = false; return; } }
         TopBar.IsEnabled = false;
         _epgClock.Stop(); _refreshTimer.Stop(); _saveSelectionDebounce.Stop(); _infoTimer.Stop(); _volumeDebounce.Stop();
-        _searchDebounce.Stop(); _rowDebounce.Stop(); EndHold();
+        _searchDebounce.Stop(); _groupSearchDebounce.Stop(); _rowDebounce.Stop(); EndHold();
         _libraryCts.Cancel(); CancelAndClear(ref _epgCts); CancelAndClear(ref _tuneCts);
         _previewCts.Cancel(); _filterCts.Cancel();
         try

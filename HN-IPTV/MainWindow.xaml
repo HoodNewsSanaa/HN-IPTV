@@ -94,7 +94,7 @@
                              ScrollViewer.CanContentScroll="True" VirtualizingPanel.IsVirtualizing="True"
                              VirtualizingPanel.VirtualizationMode="Recycling"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             SelectionChanged="ChannelsList_SelectionChanged" MouseDoubleClick="ChannelsList_DoubleClick">
+                             SelectionChanged="ChannelsList_SelectionChanged">
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem" BasedOn="{StaticResource SideListStyle}">
                                 <EventSetter Event="PreviewMouseLeftButtonDown" Handler="ChannelItem_MouseDown"/>
@@ -204,7 +204,7 @@
                     <Button Content="Ⅱ Pause" Click="Pause_Click" Margin="0,3,5,3"/>
                     <Button Content="■ Stop" Click="Stop_Click" Margin="0,3,5,3"/>
                     <Button Content="⛶" ToolTip="Fullscreen (F)" Click="Fullscreen_Click" Margin="0,3,5,3"/>
-                    <Button Content="PiP" ToolTip="Floating picture in picture" Click="Pip_Click" Margin="0,3,5,3"/>
+                    <Button Content="PiP" ToolTip="Floating picture in picture (P)" Click="Pip_Click" Margin="0,3,5,3"/>
                     <Button Content="Info" x:Name="StreamInfoButton" Click="StreamInfo_Click" ToolTip="Show stream resolution, frame rate, input bitrate and audio format" Margin="0,3,5,3"/>
                     <ComboBox x:Name="BufferSelector" Width="94" VerticalAlignment="Center" Margin="0,3,7,3"
                               ToolTip="Playback buffer. Applies on next tune." SelectionChanged="BufferSelector_SelectionChanged">

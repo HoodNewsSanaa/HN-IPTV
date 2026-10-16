@@ -77,8 +77,14 @@ internal sealed class PlaybackController
         if (_disposed || _player == null || _media == null) return StreamInfo.Empty;
         var result = new StreamInfo { Playing = _player.IsPlaying, State = _player.State.ToString(), PositionMilliseconds = _player.Time };
         var tracks = _media.Tracks;
+        // Some demuxers report a transient/unmapped selected ID. A sole enabled
+        // track is unambiguous; never guess between multiple tracks.
         var videoId = _player.VideoTrack;
+        if (videoId >= 0 && !tracks.Any(t => t.TrackType == TrackType.Video && t.Id == videoId) && tracks.Count(t => t.TrackType == TrackType.Video) == 1)
+            videoId = tracks.First(t => t.TrackType == TrackType.Video).Id;
         var audioId = _player.AudioTrack;
+        if (audioId >= 0 && !tracks.Any(t => t.TrackType == TrackType.Audio && t.Id == audioId) && tracks.Count(t => t.TrackType == TrackType.Audio) == 1)
+            audioId = tracks.First(t => t.TrackType == TrackType.Audio).Id;
         foreach (var track in tracks)
         {
             if (track.TrackType == TrackType.Video && track.Id == videoId)
@@ -95,6 +101,9 @@ internal sealed class PlaybackController
                 result = result with { AudioCodec = _media.CodecDescription(TrackType.Audio, track.Codec) ?? "",
                     AudioChannels = (int)track.Data.Audio.Channels, AudioSampleRate = (int)track.Data.Audio.Rate };
         }
+        uint width = 0, height = 0;
+        if (result.Width <= 0 && _player.Size(0, ref width, ref height) && width > 0 && height > 0)
+            result = result with { Width = (int)width, Height = (int)height };
         var stats = _media.Statistics;
         var now = Stopwatch.GetTimestamp();
         if (_lastRateTimestamp != 0)

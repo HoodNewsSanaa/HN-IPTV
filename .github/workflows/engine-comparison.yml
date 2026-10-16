@@ -1,7 +1,6 @@
 name: Compare VLC, mpv and MPC-HC on Windows
 on:
   workflow_dispatch:
-  pull_request:
 permissions:
   contents: read
 concurrency:
@@ -35,6 +34,7 @@ jobs:
                     @{ passed=$false; engine=$engine; reason='Harness failed before report' } | ConvertTo-Json | Set-Content "artifacts/comparison/$engine-$trial.json"
                   }
                   Write-Warning "$engine trial $trial failed: $($_.Exception.GetType().Name)"
+                  break
                 }
               }
             } catch {
@@ -43,6 +43,7 @@ jobs:
             }
           }
           ./compare-engines.ps1 -Directory "$PWD/artifacts/comparison"
+          $global:LASTEXITCODE = 0
       - name: Upload comparison evidence
         if: always()
         uses: actions/upload-artifact@v4

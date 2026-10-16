@@ -20,6 +20,7 @@ internal sealed class PictureInPictureWindow : Window
     private readonly PlayerSettings _settings;
     private readonly Window _heading, _controls;
     private readonly TextBlock _title;
+    private readonly List<Window> _resizeHandles = new();
     private readonly DispatcherTimer _hover = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(120) };
     private bool _attached, _closed, _fitting;
     private double _aspect = 16d / 9;
@@ -69,6 +70,7 @@ internal sealed class PictureInPictureWindow : Window
         SizeChanged += (_, _) => { if (!_fitting && IsLoaded) FitVideo(); PositionOverlays(); };
         PreviewKeyDown += (_, e) => {
             if (e.Key == Key.Escape) { Close(); e.Handled = true; }
+            else if (e.Key == Key.P && !e.IsRepeat && Keyboard.Modifiers == ModifierKeys.None) { Close(); e.Handled = true; }
             else if (e.Key == Key.Space) { pause(); e.Handled = true; }
             else if (e.Key == Key.Tab) ShowControls(true);
         };
@@ -78,11 +80,26 @@ internal sealed class PictureInPictureWindow : Window
                 // WPF requires an owner to have been shown before it can own
                 // another Window. Do this after PiP's own HWND is visible.
                 _heading.Owner = this; _controls.Owner = this;
+                // Separate transparent HWND strips sit above the native video.
+                // WindowChrome alone cannot receive its mouse hit tests.
+                foreach (int hit in new[] { 10, 11, 12, 15, 13, 14, 16, 17 }) {
+                    int edge = hit;
+                    var grip = new Window { Owner = this, WindowStyle = WindowStyle.None,
+                        ResizeMode = ResizeMode.NoResize, AllowsTransparency = true,
+                        Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)),
+                        ShowActivated = false, ShowInTaskbar = false, Topmost = true,
+                        Cursor = hit is 10 or 11 ? Cursors.SizeWE : hit is 12 or 15 ? Cursors.SizeNS : hit is 13 or 17 ? Cursors.SizeNWSE : Cursors.SizeNESW };
+                    grip.MouseLeftButtonDown += (_, e) => { e.Handled = true; ReleaseCapture();
+                        SendMessage(new WindowInteropHelper(this).Handle, 0x00A1, new IntPtr(edge), IntPtr.Zero); };
+                    grip.PreviewKeyDown += (_, e) => { if (e.Key == Key.P && !e.IsRepeat) { e.Handled = true; Close(); } };
+                    _resizeHandles.Add(grip);
+                }
+                PositionOverlays(); foreach (var grip in _resizeHandles) grip.Show();
                 _home.TransferTo(VideoHost); _attached = true; _hover.Start();
             }
             catch (Exception ex) { App.LogException("pip.attach", ex); Close(); }
         };
-        Closed += (_, _) => { _closed = true; _hover.Stop(); _heading.Close(); _controls.Close(); };
+        Closed += (_, _) => { _closed = true; _hover.Stop(); _heading.Close(); _controls.Close(); foreach (var grip in _resizeHandles) grip.Close(); };
     }
     private static Button Button(string text, Action action)
     {
@@ -90,12 +107,19 @@ internal sealed class PictureInPictureWindow : Window
             ToolTip = text == "Ⅱ" ? "Pause / resume (Space)" : text };
         button.Click += (_, _) => action(); return button;
     }
-    private Window Overlay(UIElement content, double height) => new() {
+    private Window Overlay(UIElement content, double height)
+    {
+        var overlay = new Window {
         WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize,
         ShowInTaskbar = false, ShowActivated = false, Topmost = true,
         Background = new SolidColorBrush(Color.FromRgb(21, 30, 44)), Foreground = Brushes.White,
         Height = height, Content = content
-    };
+        };
+        overlay.PreviewKeyDown += (_, e) => {
+            if ((e.Key == Key.P && !e.IsRepeat && Keyboard.Modifiers == ModifierKeys.None) || e.Key == Key.Escape) { e.Handled = true; Close(); }
+        };
+        return overlay;
+    }
     internal void SetChannelTitle(string text) { Title = "HN-IPTV — " + text; _title.Text = text; }
     internal void SetAspect(double aspect)
     {
@@ -114,8 +138,20 @@ internal sealed class PictureInPictureWindow : Window
     private void PositionOverlays()
     {
         if (_closed || _heading == null || _controls == null || ActualWidth <= 0) return;
-        foreach (var overlay in new[] { _heading, _controls }) { overlay.Left = Left; overlay.Width = ActualWidth; }
-        _heading.Top = Top; _controls.Top = Top + Math.Max(0, ActualHeight - _controls.Height);
+        const double edge = 7;
+        foreach (var overlay in new[] { _heading, _controls }) { overlay.Left = Left + edge; overlay.Width = Math.Max(1, ActualWidth - 2 * edge); }
+        _heading.Top = Top + edge; _controls.Top = Top + Math.Max(edge, ActualHeight - edge - _controls.Height);
+        var regions = new[] {
+            new Rect(0, edge, edge, Math.Max(1, ActualHeight - 2 * edge)),
+            new Rect(ActualWidth - edge, edge, edge, Math.Max(1, ActualHeight - 2 * edge)),
+            new Rect(edge, 0, Math.Max(1, ActualWidth - 2 * edge), edge),
+            new Rect(edge, ActualHeight - edge, Math.Max(1, ActualWidth - 2 * edge), edge),
+            new Rect(0, 0, edge, edge), new Rect(ActualWidth - edge, 0, edge, edge),
+            new Rect(0, ActualHeight - edge, edge, edge), new Rect(ActualWidth - edge, ActualHeight - edge, edge, edge) };
+        for (int i = 0; i < _resizeHandles.Count; i++) {
+            var grip = _resizeHandles[i]; var r = regions[i];
+            grip.Left = Left + r.X; grip.Top = Top + r.Y; grip.Width = r.Width; grip.Height = r.Height;
+        }
     }
     private void UpdateHover()
     {
@@ -161,6 +197,8 @@ internal sealed class PictureInPictureWindow : Window
     }
     [StructLayout(LayoutKind.Sequential)] private struct NativePoint { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] private struct NativeRect { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")] private static extern bool ReleaseCapture();
+    [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetCursorPos(out NativePoint point);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetWindowRect(IntPtr hwnd, out NativeRect rect);
 }
