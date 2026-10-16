@@ -1,8 +1,8 @@
 #ifndef AppVersion
-  #define AppVersion "0.9.0"
+  #define AppVersion "0.9.2"
 #endif
 #ifndef PlaybackEngine
-  #define PlaybackEngine "vlc"
+  #define PlaybackEngine "mpv"
 #endif
 [Setup]
 AppId={{CD93EEDF-5518-4324-92BD-06600458F64C}

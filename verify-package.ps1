@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$PublishDirectory, [ValidateSet('vlc','mpv','mpc')][string]$Engine = 'vlc')
+param([Parameter(Mandatory)][string]$PublishDirectory, [ValidateSet('vlc','mpv','mpc')][string]$Engine = 'mpv')
 $ErrorActionPreference = 'Stop'
 $required = @('HN-IPTV.exe','HN-IPTV.dll','HN-IPTV.Core.dll','HN-IPTV.deps.json','HN-IPTV.runtimeconfig.json',
     'coreclr.dll','hostfxr.dll','PresentationFramework.dll','build-manifest.json')

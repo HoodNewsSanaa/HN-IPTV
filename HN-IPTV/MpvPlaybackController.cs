@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 
 namespace HnIptv;
 
-// Comparison backend only. The regular distribution contains VLC, not both engines.
+// Default mpv backend. Each distribution contains one native playback engine.
 internal sealed class PlaybackController
 {
     private readonly SemaphoreSlim _gate = new(1, 1);

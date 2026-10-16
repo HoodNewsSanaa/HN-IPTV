@@ -1,13 +1,13 @@
-param([string]$PublishDirectory = (Join-Path $PSScriptRoot 'artifacts/publish'))
+param([string]$PublishDirectory = (Join-Path $PSScriptRoot 'artifacts/publish'), [ValidateSet('vlc','mpv','mpc')][string]$Engine = 'mpv')
 $ErrorActionPreference = 'Stop'
-& (Join-Path $PSScriptRoot 'verify-package.ps1') -PublishDirectory $PublishDirectory
+& (Join-Path $PSScriptRoot 'verify-package.ps1') -PublishDirectory $PublishDirectory -Engine $Engine
 $temporary = Join-Path ([IO.Path]::GetTempPath()) ('hn-package-check-' + [guid]::NewGuid().ToString('N'))
 try {
     Copy-Item -LiteralPath $PublishDirectory -Destination $temporary -Recurse
     $file = [IO.File]::OpenWrite((Join-Path $temporary 'System.Private.CoreLib.dll'))
     try { $file.SetLength(64) } finally { $file.Dispose() }
     $rejected = $false
-    try { & (Join-Path $PSScriptRoot 'verify-package.ps1') -PublishDirectory $temporary }
+    try { & (Join-Path $PSScriptRoot 'verify-package.ps1') -PublishDirectory $temporary -Engine $Engine }
     catch { if ("$_" -notmatch 'Truncated PE') { throw }; $rejected = $true }
     if (-not $rejected) { throw 'Truncated runtime DLL was accepted.' }
     Write-Host 'Complete publish accepted; deliberately truncated runtime DLL rejected.'

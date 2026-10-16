@@ -162,7 +162,7 @@ public partial class MainWindow : Window
                 try { _playerSettings = PlayerSettings.Load(PlayerSettingsPath); }
                 catch (Exception ex) { App.LogException("settings.load", ex); }
             });
-            RenderCaptionsState();
+            RenderCaptionsState(); ApplyColumnLayout();
             BufferSelector.SelectedIndex = _playerSettings.BufferMilliseconds <= 500 ? 0 : _playerSettings.BufferMilliseconds >= 3000 ? 2 : 1;
             if (_closing) return;
             _ = _logos.PruneAsync();
@@ -809,6 +809,20 @@ public partial class MainWindow : Window
         _volumeDebounce.Stop(); _volumeDebounce.Start();
     }
 
+    private void ApplyColumnLayout()
+    {
+        GroupsColumn.MinWidth = 160; ChannelsColumn.MinWidth = 220;
+        GroupsColumn.Width = new GridLength(_playerSettings.GroupsColumnWeight, GridUnitType.Star);
+        ChannelsColumn.Width = new GridLength(_playerSettings.ChannelsColumnWeight, GridUnitType.Star);
+        PlayerColumn.Width = new GridLength(_playerSettings.PlayerColumnWeight, GridUnitType.Star);
+    }
+    private void ColumnDivider_DragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        if (_isFullScreen || _closing || !_libraryLoadedSuccessfully) return;
+        _playerSettings = _playerSettings with { GroupsColumnWeight = GroupsColumn.ActualWidth,
+            ChannelsColumnWeight = ChannelsColumn.ActualWidth, PlayerColumnWeight = PlayerColumn.ActualWidth };
+        SavePlayerSettings();
+    }
     private async void Captions_Click(object sender, RoutedEventArgs e) => await ToggleCaptionsAsync();
     private void RenderCaptionsState()
     {
@@ -981,6 +995,8 @@ public partial class MainWindow : Window
             StatusStrip.Visibility = Visibility.Collapsed;
             HeaderRow.Height = new GridLength(0);
             FooterRow.Height = new GridLength(0);
+            GroupsDivider.Visibility = PlayerDivider.Visibility = Visibility.Collapsed;
+            GroupsColumn.MinWidth = ChannelsColumn.MinWidth = 0;
             GroupsColumn.Width = new GridLength(0);
             ChannelsColumn.Width = new GridLength(0);
             PlayerRoot.Margin = new Thickness(0);
@@ -1006,8 +1022,8 @@ public partial class MainWindow : Window
             StatusStrip.Visibility = Visibility.Visible;
             HeaderRow.Height = new GridLength(72);
             FooterRow.Height = new GridLength(35);
-            GroupsColumn.Width = new GridLength(215);
-            ChannelsColumn.Width = new GridLength(390);
+            ApplyColumnLayout();
+            GroupsDivider.Visibility = PlayerDivider.Visibility = Visibility.Visible;
             PlayerRoot.Margin = new Thickness(20, 19, 20, 12);
             PlayerTitleBar.Visibility = Visibility.Visible;
             GuideRoot.Visibility = Visibility.Visible;

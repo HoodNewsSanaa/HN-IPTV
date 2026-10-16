@@ -44,11 +44,19 @@
         <!-- Main content -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="GroupsColumn" Width="215"/>
-                <ColumnDefinition x:Name="ChannelsColumn" Width="390"/>
-                <ColumnDefinition Width="*"/>
+                <ColumnDefinition x:Name="GroupsColumn" Width="215*" MinWidth="160"/>
+                <ColumnDefinition x:Name="ChannelsColumn" Width="390*" MinWidth="220"/>
+                <ColumnDefinition x:Name="PlayerColumn" Width="755*" MinWidth="360"/>
             </Grid.ColumnDefinitions>
 
+            <GridSplitter x:Name="GroupsDivider" Grid.Column="0" Width="6" HorizontalAlignment="Right"
+                          VerticalAlignment="Stretch" Background="#31445D" Cursor="SizeWE" Panel.ZIndex="10"
+                          ResizeDirection="Columns" ResizeBehavior="CurrentAndNext" DragCompleted="ColumnDivider_DragCompleted"
+                          ToolTip="Drag to resize groups and channels"/>
+            <GridSplitter x:Name="PlayerDivider" Grid.Column="1" Width="6" HorizontalAlignment="Right"
+                          VerticalAlignment="Stretch" Background="#31445D" Cursor="SizeWE" Panel.ZIndex="10"
+                          ResizeDirection="Columns" ResizeBehavior="CurrentAndNext" DragCompleted="ColumnDivider_DragCompleted"
+                          ToolTip="Drag to resize channels and player"/>
             <!-- Left navigation -->
             <Border Grid.Column="0" Background="#111927" BorderBrush="#223147" BorderThickness="0,0,1,0">
                 <DockPanel Margin="12,16,12,12">

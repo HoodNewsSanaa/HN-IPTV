@@ -5,6 +5,9 @@ namespace HnIptv.Preferences;
 
 public sealed record PlayerSettings
 {
+    public double GroupsColumnWeight { get; init; } = 215;
+    public double ChannelsColumnWeight { get; init; } = 390;
+    public double PlayerColumnWeight { get; init; } = 755;
     public bool CaptionsEnabled { get; init; }
     public int BufferMilliseconds { get; init; } = 1200;
     public double PipLeft { get; init; } = 80;
@@ -13,6 +16,9 @@ public sealed record PlayerSettings
     public double PipHeight { get; init; } = 320;
     public PlayerSettings Normalize() => this with
     {
+        GroupsColumnWeight = double.IsFinite(GroupsColumnWeight) ? Math.Clamp(GroupsColumnWeight, 1, 100000) : 215,
+        ChannelsColumnWeight = double.IsFinite(ChannelsColumnWeight) ? Math.Clamp(ChannelsColumnWeight, 1, 100000) : 390,
+        PlayerColumnWeight = double.IsFinite(PlayerColumnWeight) ? Math.Clamp(PlayerColumnWeight, 1, 100000) : 755,
         BufferMilliseconds = Math.Clamp(BufferMilliseconds, 250, 10000),
         PipLeft = double.IsFinite(PipLeft) ? PipLeft : 80,
         PipTop = double.IsFinite(PipTop) ? PipTop : 80,
