@@ -74,7 +74,12 @@ internal sealed class PictureInPictureWindow : Window
         };
         _hover.Tick += (_, _) => UpdateHover();
         Loaded += (_, _) => {
-            try { _home.TransferTo(VideoHost); _attached = true; _hover.Start(); }
+            try {
+                // WPF requires an owner to have been shown before it can own
+                // another Window. Do this after PiP's own HWND is visible.
+                _heading.Owner = this; _controls.Owner = this;
+                _home.TransferTo(VideoHost); _attached = true; _hover.Start();
+            }
             catch (Exception ex) { App.LogException("pip.attach", ex); Close(); }
         };
         Closed += (_, _) => { _closed = true; _hover.Stop(); _heading.Close(); _controls.Close(); };
@@ -86,7 +91,7 @@ internal sealed class PictureInPictureWindow : Window
         button.Click += (_, _) => action(); return button;
     }
     private Window Overlay(UIElement content, double height) => new() {
-        Owner = this, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize,
+        WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize,
         ShowInTaskbar = false, ShowActivated = false, Topmost = true,
         Background = new SolidColorBrush(Color.FromRgb(21, 30, 44)), Foreground = Brushes.White,
         Height = height, Content = content

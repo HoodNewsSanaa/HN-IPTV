@@ -1,0 +1,74 @@
+{
+  "environment": "Ubuntu 24.04.3 LTS",
+  "runtime": "10.0.13",
+  "channels": 50000,
+  "legacy_encrypted_portable": false,
+  "m3u_parse": {
+    "median_ms": 86.5286,
+    "median_allocated_bytes": 60360008,
+    "samples_ms": [
+      148.4152,
+      128.5058,
+      79.0365,
+      86.5286,
+      73.6538
+    ]
+  },
+  "capture_snapshot": {
+    "median_ms": 0.041,
+    "median_allocated_bytes": 960,
+    "samples_ms": [
+      0.1091,
+      0.074,
+      0.0388,
+      0.041,
+      0.0345
+    ]
+  },
+  "portable_save": {
+    "median_ms": 52.5587,
+    "median_allocated_bytes": 8248,
+    "samples_ms": [
+      51.4876,
+      51.7455,
+      52.5587,
+      78.0841,
+      75.359
+    ]
+  },
+  "portable_load": {
+    "median_ms": 98.7171,
+    "median_allocated_bytes": 27364760,
+    "samples_ms": [
+      98.7171,
+      117.4298,
+      88.3521,
+      90.5363,
+      120.7108
+    ]
+  },
+  "full_scan_filter": {
+    "median_ms": 1.25,
+    "median_allocated_bytes": 5176,
+    "samples_ms": [
+      1.436,
+      1.25,
+      1.2595,
+      1.0746,
+      0.9462
+    ]
+  },
+  "indexed_group_filter": {
+    "median_ms": 0.0705,
+    "median_allocated_bytes": 9616,
+    "samples_ms": [
+      0.7112,
+      0.0705,
+      0.0705,
+      0.0627,
+      0.0646
+    ]
+  },
+  "library_bytes": 11196110,
+  "process_peak_working_set_bytes": 167735296
+}

@@ -86,6 +86,29 @@ internal static class Program
                 await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
                 if (resets != 0) throw new InvalidOperationException("Favorite toggle rebuilt an unchanged browser.");
                 results["favorites_preserved_browser"] = true;
+                var large = Enumerable.Range(0, 50000).Select(i => new Channel { Id = "large-" + i, Name = "Channel " + i,
+                    GroupId = "G" + i % 100, GroupName = "Group " + i % 100, Command = server.Url + "segment00.ts" }).ToArray();
+                double maxDispatcherGap = 0;
+                var heartbeatClock = Stopwatch.StartNew();
+                double lastHeartbeat = 0;
+                var heartbeat = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(16) };
+                heartbeat.Tick += (_, _) => { double now = heartbeatClock.Elapsed.TotalMilliseconds;
+                    maxDispatcherGap = Math.Max(maxDispatcherGap, now - lastHeartbeat); lastHeartbeat = now; };
+                heartbeat.Start();
+                var catalogClock = Stopwatch.StartNew();
+                await (Task)Invoke(window, "SetChannelsAsync", large, Enumerable.Range(0, 100).Select(i => new ChannelGroup("G" + i, "Group " + i)).ToArray(), kind, "Large fixture", "test", false)!;
+                await UntilAsync(() => Task.FromResult(channelList.Items.Count == large.Length));
+                await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+                results["large_catalog_bind_ms"] = catalogClock.Elapsed.TotalMilliseconds;
+                var groupClock = Stopwatch.StartNew();
+                groups.SelectedItem = groups.Items.Cast<ChannelGroup>().Single(g => g.Id == "G1");
+                await UntilAsync(() => Task.FromResult(channelList.Items.Count == 500));
+                await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+                heartbeat.Stop();
+                results["large_group_change_ms"] = groupClock.Elapsed.TotalMilliseconds;
+                results["large_catalog_max_dispatcher_gap_ms"] = maxDispatcherGap;
+                await (Task)Invoke(window, "SetChannelsAsync", channels, new[] { new ChannelGroup("test", "Test"), new ChannelGroup("empty", "Empty") }, kind, "Test", "test", false)!;
+                await UntilAsync(() => Task.FromResult(channelList.Items.Count == 2));
                 channelList.SelectedIndex = 0;
                 var initialTune = Stopwatch.StartNew();
                 await (Task)Invoke(window, "PlaySelectedAsync")!;
@@ -209,7 +232,15 @@ internal static class Program
                 results["passed"] = true; exit = 0;
             }
             catch (Exception ex)
-            { results["passed"] = false; results["error_type"] = (ex.InnerException ?? ex).GetType().Name; Console.Error.WriteLine(ex); }
+            {
+                results["passed"] = false; results["error_type"] = (ex.InnerException ?? ex).GetType().Name; Console.Error.WriteLine(ex);
+                await Task.Delay(150); // Give the async sanitized diagnostic writer time to finish.
+                if (File.Exists(App.DiagnosticLogPath)) {
+                    var diagnostics = File.ReadAllLines(App.DiagnosticLogPath).TakeLast(40).ToArray();
+                    results["diagnostics"] = diagnostics;
+                    foreach (var line in diagnostics) Console.Error.WriteLine(line);
+                }
+            }
             finally
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(report))!);

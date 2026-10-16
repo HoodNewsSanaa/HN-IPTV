@@ -13,6 +13,17 @@ The review covered the desktop app, native player lifetime, PiP/Win32 ownership,
 - Status remains Buffering until position advances. It no longer declares Playing as soon as a native Play call returns.
 - Playback controls wrap within narrow player columns rather than overflowing a fixed-width grid.
 
+## Local measurement
+
+Linux .NET 10.0.13, five samples after warm-up, synthetic 50,000-channel M3U:
+
+| M3U parse | 0.8.0 baseline | 0.9.0 |
+|---|---:|---:|
+| Median duration | 169.85 ms | 86.53 ms |
+| Median allocated bytes | 134,760,008 | 60,360,008 |
+
+The input, machine, harness and runtime were the same. This is approximately 49% less elapsed parsing time and 55% fewer allocated bytes in this local trial. It does not establish Windows startup or channel tuning speed. Raw benchmark JSON is in validation/.
+
 ## Retained decisions
 
 The full x64 VLC codec set, untrimmed self-contained .NET runtime, one stable native video target, cancellation-safe channel switching, provider caching, atomic snapshots, one-active/one-pending saves, virtualized channel rows, and installer identity remain. WPF trimming, codec removal, overlapping provider connections to pre-tune channels, and changing default cache size were not justified by measurements.

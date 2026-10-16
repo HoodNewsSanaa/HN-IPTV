@@ -558,7 +558,11 @@ public partial class MainWindow : Window
         // Cached guide hits must not wait behind two slow provider requests.
         if (profile != null && profile.ProviderEpgFetchedAt.TryGetValue(requestKey, out var cachedAt) &&
             DateTimeOffset.UtcNow - cachedAt < TimeSpan.FromMinutes(Math.Clamp(profile.EpgRefreshMinutes, 5, 1440)))
-            return Task.FromResult<IReadOnlyList<ProgramEntry>>(profile.CachedProviderPrograms.GetValueOrDefault(requestKey) ?? []);
+        {
+            var cached = Task.FromResult<IReadOnlyList<ProgramEntry>>(profile.CachedProviderPrograms.GetValueOrDefault(requestKey) ?? []);
+            _epgRequests[requestKey] = cached;
+            return cached;
+        }
         if (_epgRequests.Count >= 128 && !ReferenceEquals(_selectedChannel, channel))
             return Task.FromCanceled<IReadOnlyList<ProgramEntry>>(new CancellationToken(true));
         var task = LoadProgramsAsync();
