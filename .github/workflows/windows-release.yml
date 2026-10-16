@@ -22,6 +22,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build-windows:
+    if: ${{ !startsWith(github.head_ref, 'compare-') }}
     runs-on: windows-latest
     timeout-minutes: 40
     outputs:
