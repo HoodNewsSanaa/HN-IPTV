@@ -1,4 +1,4 @@
-param([switch]$PortableOnly, [switch]$FastStartup, [string]$Version = '0.8.0', [switch]$UseExistingPublish, [switch]$QuickCompression)
+param([switch]$PortableOnly, [switch]$FastStartup, [string]$Version = '0.9.0', [switch]$UseExistingPublish, [switch]$QuickCompression)
 $ErrorActionPreference = 'Stop'
 if (-not $UseExistingPublish) {
     & (Join-Path $PSScriptRoot 'build-windows.ps1') -FastStartup:$FastStartup -Version $Version

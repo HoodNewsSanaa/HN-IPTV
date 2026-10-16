@@ -1,3 +1,14 @@
+# 0.9.0 — release candidate
+
+- Borderless PiP with title/controls in owned hover overlays over the native video. Preserve the stream's display aspect when resizing; no reserved heading/footer or app-added padding.
+- Add a toggled information panel under the stream for resolution, frame rate, received bitrate and audio format.
+- Keep Buffering status until playback advances; add native queue/stop/progress timing without URLs or credentials.
+- Reduce M3U parser allocation, cancel obsolete logo work, serve cached EPG without network queue waits, coalesce volume changes and batch diagnostic writes.
+- Add pinned mpv and MPC-HC comparison builds with same-runner Windows trials; VLC remains the default. MPC child memory/CPU is included, and missing telemetry/equivalent buffering is documented.
+- Preserve in-place upgrades and existing data. Carry the three PowerShell argument fixes into all builds.
+
+See PERFORMANCE-0.9-REVIEW.md for scope, measurements and manual validation limits.
+
 # Update 8 / 0.8.0 — release candidate
 
 - Add a resizable, always-on-top picture-in-picture window with pause, mute, volume and Return controls. Reparent one persistent native video target so PiP does not reconnect the stream. Keep the main browser usable and PiP visible when the main window is minimized.

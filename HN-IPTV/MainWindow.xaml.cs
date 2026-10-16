@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows.Threading;
 using HnIptv.Preferences;
+using HnIptv.Playback;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -31,6 +32,14 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, double> _groupOffsets = new();
     private PlayerSettings _playerSettings = new();
     private PictureInPictureWindow? _pip;
+    private readonly DispatcherTimer _infoTimer = new(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
+    private readonly DispatcherTimer _volumeDebounce = new() { Interval = TimeSpan.FromMilliseconds(50) };
+    private bool _readingInfo;
+    private StreamInfo _streamInfo = StreamInfo.Empty;
+    private Stopwatch? _tuneWatch;
+    private Channel? _playingChannel;
+    private bool _tuneSubmitted;
+    private long _tuneGeneration;
     private readonly Dictionary<string, DateTimeOffset> _failedTunes = new();
     private static string PlayerSettingsPath => Path.Combine(AppStorage.DataDirectory, "player-settings.json");
     private readonly LatestSaveQueue<PlayerSettings> _playerSettingsSaves = new(settings => settings.Save(PlayerSettingsPath));
@@ -90,6 +99,9 @@ public partial class MainWindow : Window
         _playback.PlaybackError += () => Dispatcher.BeginInvoke(new Action(() =>
         { if (!_closing) SetStatus("Playback failed. Check the stream and provider permissions."); }));
         _searchDebounce.Tick += (_, _) => { _searchDebounce.Stop(); RefreshChannels(); };
+        _infoTimer.Tick += async (_, _) => await UpdateStreamInfoAsync();
+        _volumeDebounce.Tick += async (_, _) => { _volumeDebounce.Stop();
+            try { await _playback.VolumeAsync((int)VolumeSlider.Value); } catch (Exception ex) { App.LogException("playback.volume", ex); } };
         _rowDebounce.Tick += (_, _) => { _rowDebounce.Stop(); LoadVisibleRows(); };
         StateChanged += (_, _) =>
         {
@@ -314,7 +326,8 @@ public partial class MainWindow : Window
             SetStatus("Connected. Fetching Xtream live TV channels...");
             App.LogDiagnostic("Xtream: account authenticated, requesting catalog");
             // Keep large provider JSON mapping/sorting off the WPF dispatcher thread.
-            var data = await client.GetLiveTvAsync(_libraryCts.Token);
+            var importToken = _libraryCts.Token;
+            var data = await Task.Run(() => client.GetLiveTvAsync(importToken), importToken);
             if (_closing) return;
             App.LogDiagnostic($"Xtream: catalog received ({data.Channels.Count} channels, {data.Groups.Count} groups)");
             var format = client.SelectedFormat;
@@ -542,6 +555,10 @@ public partial class MainWindow : Window
         var profile = _activePlaylist;
         var source = _source;
         var xtream = _xtream;
+        // Cached guide hits must not wait behind two slow provider requests.
+        if (profile != null && profile.ProviderEpgFetchedAt.TryGetValue(requestKey, out var cachedAt) &&
+            DateTimeOffset.UtcNow - cachedAt < TimeSpan.FromMinutes(Math.Clamp(profile.EpgRefreshMinutes, 5, 1440)))
+            return Task.FromResult<IReadOnlyList<ProgramEntry>>(profile.CachedProviderPrograms.GetValueOrDefault(requestKey) ?? []);
         if (_epgRequests.Count >= 128 && !ReferenceEquals(_selectedChannel, channel))
             return Task.FromCanceled<IReadOnlyList<ProgramEntry>>(new CancellationToken(true));
         var task = LoadProgramsAsync();
@@ -688,6 +705,10 @@ public partial class MainWindow : Window
         _tuneCts = cts;
         try
         {
+            _tuneGeneration++;
+            _playingChannel = channel; _tuneWatch = Stopwatch.StartNew(); _tuneSubmitted = false;
+            _streamInfo = StreamInfo.Empty; RenderStreamInfo();
+            _infoTimer.Interval = TimeSpan.FromMilliseconds(200); _infoTimer.Start();
             SetStatus("Tuning " + channel.Name + "...");
             string url;
             if (_source == SourceKind.Xtream)
@@ -703,8 +724,10 @@ public partial class MainWindow : Window
             await _playback.PlayAsync(uri, VideoView.VideoHandle, (int)VolumeSlider.Value, cts.Token, _playerSettings.BufferMilliseconds);
             if (cts.IsCancellationRequested || _closing) return;
             _failedTunes.Remove(failureKey);
-            if (_pip != null) _pip.Title = "HN-IPTV — " + channel.Name;
-            SetStatus("Playing " + channel.Name + ".");
+            _pip?.SetChannelTitle(channel.Name);
+            _tuneSubmitted = true;
+            SetStatus("Buffering " + channel.Name + "...");
+            await UpdateStreamInfoAsync();
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -726,6 +749,8 @@ public partial class MainWindow : Window
     }
     private async Task StopPlaybackAsync()
     {
+        _tuneGeneration++; _tuneSubmitted = false; _tuneWatch = null; _playingChannel = null;
+        _infoTimer.Stop(); _streamInfo = StreamInfo.Empty; RenderStreamInfo();
         try { await _playback.StopAsync(); } catch (Exception ex) { App.LogException("playback.stop", ex); }
     }
     private async void Stop_Click(object sender, RoutedEventArgs e)
@@ -751,9 +776,45 @@ public partial class MainWindow : Window
         if ((GroupsList.SelectedItem as ChannelGroup)?.Id == "fav") RefreshChannels();
     }
 
-    private async void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    private void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        try { await _playback.VolumeAsync((int)e.NewValue); } catch (Exception ex) { App.LogException("playback.volume", ex); }
+        if (_closing) return;
+        _volumeDebounce.Stop(); _volumeDebounce.Start();
+    }
+
+    private void StreamInfo_Click(object sender, RoutedEventArgs e)
+    {
+        StreamInfoPanel.Visibility = StreamInfoPanel.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+        StreamInfoButton.Content = StreamInfoPanel.Visibility == Visibility.Visible ? "Hide info" : "Info";
+        RenderStreamInfo();
+        if (StreamInfoPanel.Visibility == Visibility.Visible) { _infoTimer.Start(); _ = UpdateStreamInfoAsync(); }
+    }
+    private void RenderStreamInfo()
+    {
+        StreamVideoInfo.Text = "Video: " + _streamInfo.ResolutionText + " · " + _streamInfo.FrameRateText +
+            (string.IsNullOrWhiteSpace(_streamInfo.VideoCodec) ? "" : " · " + _streamInfo.VideoCodec);
+        StreamBitrateInfo.Text = "Input bitrate: " + _streamInfo.BitrateText + " (received data; varies with buffering)";
+        StreamAudioInfo.Text = "Audio: " + _streamInfo.AudioText;
+    }
+    private async Task UpdateStreamInfoAsync()
+    {
+        if (_readingInfo || _closing || !_tuneSubmitted || (_minimized && _pip == null)) return;
+        if (_tuneWatch == null && _pip == null && StreamInfoPanel.Visibility != Visibility.Visible) { _infoTimer.Stop(); return; }
+        _readingInfo = true;
+        var generation = _tuneGeneration;
+        try {
+            var info = await _playback.ReadInfoAsync();
+            if (info == null || _closing || generation != _tuneGeneration) return;
+            _streamInfo = info;
+            _pip?.SetAspect(info.AspectRatio);
+            if (StreamInfoPanel.Visibility == Visibility.Visible) RenderStreamInfo();
+            if (_tuneWatch != null && info.Playing && info.PositionMilliseconds > 0) {
+                App.LogDiagnostic($"playback.time_to_progress_ms={_tuneWatch.Elapsed.TotalMilliseconds:F1}");
+                _tuneWatch = null; _infoTimer.Interval = TimeSpan.FromSeconds(1);
+                SetStatus("Playing " + _playingChannel?.Name + ".");
+            }
+        } catch (Exception ex) { App.LogException("playback.info", ex); }
+        finally { _readingInfo = false; }
     }
 
     private void Fullscreen_Click(object sender, RoutedEventArgs e) => ToggleFullscreen();
@@ -798,6 +859,9 @@ public partial class MainWindow : Window
                     SavePlayerSettings();
                 });
             _pip = pip;
+            pip.SetChannelTitle(_playingChannel?.Name ?? "HN-IPTV");
+            pip.SetAspect(_streamInfo.AspectRatio);
+            _infoTimer.Start();
             pip.Closed += async (_, _) =>
             {
                 _pip = null;
@@ -866,6 +930,7 @@ public partial class MainWindow : Window
             PlayerTitleBar.Visibility = Visibility.Collapsed;
             GuideRoot.Visibility = Visibility.Collapsed;
             PlaybackButtons.Visibility = Visibility.Collapsed;
+            StreamInfoPanel.Visibility = Visibility.Collapsed;
             PlayerTitleRow.Height = new GridLength(0);
             PlayerGuideRow.Height = new GridLength(0);
             PlayerControlsRow.Height = new GridLength(0);
@@ -890,6 +955,7 @@ public partial class MainWindow : Window
             PlayerTitleBar.Visibility = Visibility.Visible;
             GuideRoot.Visibility = Visibility.Visible;
             PlaybackButtons.Visibility = Visibility.Visible;
+            if ((string)StreamInfoButton.Content == "Hide info") StreamInfoPanel.Visibility = Visibility.Visible;
             PlayerTitleRow.Height = GridLength.Auto;
             PlayerGuideRow.Height = new GridLength(2, GridUnitType.Star);
             PlayerControlsRow.Height = GridLength.Auto;
@@ -1188,7 +1254,7 @@ public partial class MainWindow : Window
         _closing = true;
         if (_pip != null) { _pip.Close(); if (_pip != null) { _closing = false; return; } }
         TopBar.IsEnabled = false;
-        _epgClock.Stop(); _refreshTimer.Stop(); _saveSelectionDebounce.Stop();
+        _epgClock.Stop(); _refreshTimer.Stop(); _saveSelectionDebounce.Stop(); _infoTimer.Stop(); _volumeDebounce.Stop();
         _searchDebounce.Stop(); _rowDebounce.Stop(); EndHold();
         _libraryCts.Cancel(); CancelAndClear(ref _epgCts); CancelAndClear(ref _tuneCts);
         _previewCts.Cancel(); _filterCts.Cancel();

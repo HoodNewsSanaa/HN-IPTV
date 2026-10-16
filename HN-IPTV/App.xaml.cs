@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 using System.Threading.Channels;
 using System.Windows;
 using System.Windows.Threading;
@@ -91,7 +92,9 @@ public partial class App : Application
             {
                 if (File.Exists(DiagnosticLogPath) && new FileInfo(DiagnosticLogPath).Length > 1_048_576)
                     File.Move(DiagnosticLogPath, DiagnosticLogPath + ".1", true);
-                await File.AppendAllTextAsync(DiagnosticLogPath, entry + Environment.NewLine).ConfigureAwait(false);
+                var batch = new StringBuilder(entry).AppendLine();
+                for (int i = 1; i < 32 && Log.Reader.TryRead(out var next); i++) batch.AppendLine(next);
+                await File.AppendAllTextAsync(DiagnosticLogPath, batch.ToString()).ConfigureAwait(false);
             }
             catch (Exception) { /* Diagnostics cannot interrupt playback or saving. */ }
         }

@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using HnIptv.Playback;
+using System.Globalization;
 using System.Runtime.InteropServices;
 
 namespace HnIptv;
@@ -73,9 +75,41 @@ internal sealed class PlaybackController
             if (_handle == IntPtr.Zero) return;
             double position = 0;
             int status = Native.mpv_get_property(_handle, "time-pos", 5, ref position);
-            result = (_playing && !_paused, status >= 0 ? (long)(position * 1000) : -1);
+            result = (_playing && !_paused && Number("core-idle") == 0 && status >= 0 && position > 0, status >= 0 ? (long)(position * 1000) : -1);
         }).ConfigureAwait(false);
         return result;
+    }
+    internal async Task<StreamInfo?> ReadInfoAsync(CancellationToken ct = default)
+    {
+        if (!await _gate.WaitAsync(0, ct).ConfigureAwait(false)) return null;
+        try { return await Task.Run(() => {
+            if (_disposed || _handle == IntPtr.Zero) return StreamInfo.Empty;
+            double fps = Number("estimated-vf-fps");
+            if (!double.IsFinite(fps) || fps <= 0) fps = Number("container-fps");
+            double rate = Number("cache-speed");
+            double position = Number("time-pos");
+            bool active = _playing && !_paused && Number("core-idle") == 0 && position > 0;
+            return new StreamInfo { Width = Integer("video-params/w"), Height = Integer("video-params/h"),
+                DisplayAspect = Number("video-params/aspect"), FramesPerSecond = fps,
+                VideoCodec = Text("video-codec"), AudioCodec = Text("audio-codec-name"),
+                AudioChannels = Integer("audio-params/channel-count"), AudioSampleRate = Integer("audio-params/samplerate"),
+                InputBitsPerSecond = double.IsFinite(rate) && rate >= 0 ? rate * 8 : null,
+                PositionMilliseconds = double.IsFinite(position) ? (long)(position * 1000) : -1,
+                Playing = active, State = _paused ? "Paused" : active ? "Playing" : _playing ? "Buffering" : "Stopped" };
+        }, ct).ConfigureAwait(false); }
+        finally { _gate.Release(); }
+    }
+    private double Number(string name)
+    {
+        double value = 0;
+        return Native.mpv_get_property(_handle, name, 5, ref value) >= 0 ? value : double.NaN;
+    }
+    private int Integer(string name) { var n = Number(name); return double.IsFinite(n) && n > 0 && n < int.MaxValue ? (int)n : 0; }
+    private string Text(string name)
+    {
+        var pointer = Native.mpv_get_property_string(_handle, name);
+        if (pointer == IntPtr.Zero) return "";
+        try { return Marshal.PtrToStringUTF8(pointer) ?? ""; } finally { Native.mpv_free(pointer); }
     }
     private async Task CommandAsync(CancellationToken ct, params string[] args)
     {
@@ -144,6 +178,8 @@ internal sealed class PlaybackController
     private static class Native
     {
         private const string Library = "libmpv-2.dll";
+        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr mpv_get_property_string(IntPtr handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
+        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern void mpv_free(IntPtr pointer);
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr mpv_create();
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern int mpv_initialize(IntPtr handle);
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern void mpv_terminate_destroy(IntPtr handle);

@@ -11,7 +11,7 @@
     <Product>HN-IPTV</Product>
     <AssemblyTitle>HN-IPTV</AssemblyTitle>
     <Company>HN-IPTV</Company>
-    <Version>0.8.0</Version>
+    <Version>0.9.0</Version>
     <PlaybackEngine Condition="'$(PlaybackEngine)' == ''">vlc</PlaybackEngine>
     <PlatformTarget>x64</PlatformTarget>
     <VlcWindowsX64Enabled>true</VlcWindowsX64Enabled>
@@ -41,11 +41,22 @@
     <Compile Remove="PlaybackController.cs" />
     <Content Include="../native/mpv/libmpv-2.dll" Link="libmpv-2.dll" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <PropertyGroup Condition="'$(PlaybackEngine)' == 'mpc'">
+    <DefineConstants>$(DefineConstants);USE_MPC</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(PlaybackEngine)' == 'mpc'">
+    <Compile Remove="PlaybackController.cs" />
+    <Content Include="../native/mpc-hc/**/*" Link="mpc-hc/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
   <ItemGroup Condition="'$(PlaybackEngine)' != 'mpv'">
     <Compile Remove="MpvPlaybackController.cs" />
   </ItemGroup>
+  <ItemGroup Condition="'$(PlaybackEngine)' != 'mpc'">
+    <Compile Remove="MpcPlaybackController.cs" />
+  </ItemGroup>
   <Target Name="ValidatePlaybackEngine" BeforeTargets="PrepareForBuild">
-    <Error Condition="'$(PlaybackEngine)' != 'vlc' and '$(PlaybackEngine)' != 'mpv'" Text="PlaybackEngine must be vlc or mpv." />
+    <Error Condition="'$(PlaybackEngine)' != 'vlc' and '$(PlaybackEngine)' != 'mpv' and '$(PlaybackEngine)' != 'mpc'" Text="PlaybackEngine must be vlc, mpv or mpc." />
     <Error Condition="'$(PlaybackEngine)' == 'mpv' and !Exists('../native/mpv/libmpv-2.dll')" Text="Run prepare-mpv.ps1 before building the mpv comparison." />
+    <Error Condition="'$(PlaybackEngine)' == 'mpc' and !Exists('../native/mpc-hc/mpc-hc64.exe')" Text="Run prepare-mpc.ps1 before building the MPC-HC comparison." />
   </Target>
 </Project>

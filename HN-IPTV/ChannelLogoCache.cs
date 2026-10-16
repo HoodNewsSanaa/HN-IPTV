@@ -24,15 +24,23 @@ internal sealed class ChannelLogoCache : IDisposable
         lock (_sync)
             if (_memory.TryGetValue(url, out var hit) && hit.Expires > DateTimeOffset.UtcNow) return hit.Image;
         if (_pending.Count >= 128 && !_pending.ContainsKey(url)) return null;
-        var lazy = _pending.GetOrAdd(url, _ => new Lazy<Task<BitmapSource?>>(() => Task.Run(() => LoadAsync(uri, maxAge))));
+        var lazy = _pending.GetOrAdd(url, _ => new Lazy<Task<BitmapSource?>>(() => Task.Run(() => LoadAsync(uri, maxAge, ct))));
         var task = lazy.Value;
         _ = task.ContinueWith(_ => _pending.TryRemove(new KeyValuePair<string, Lazy<Task<BitmapSource?>>>(url, lazy)),
             CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-        return await task.WaitAsync(ct).ConfigureAwait(false);
+        try { return await task.WaitAsync(ct).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested && !_lifetime.IsCancellationRequested)
+        {
+            // The same logo may have been requested in the previous category.
+            // Retry under this category's live token rather than inherit its cancellation.
+            _pending.TryRemove(new KeyValuePair<string, Lazy<Task<BitmapSource?>>>(url, lazy));
+            return await GetAsync(url, maxAge, ct).ConfigureAwait(false);
+        }
     }
-    private async Task<BitmapSource?> LoadAsync(Uri uri, TimeSpan maxAge)
+    private async Task<BitmapSource?> LoadAsync(Uri uri, TimeSpan maxAge, CancellationToken generation)
     {
-        var ct = _lifetime.Token;
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(generation, _lifetime.Token);
+        var ct = linked.Token;
         await _limit.WaitAsync(ct).ConfigureAwait(false);
         BitmapSource? image = null;
         try
@@ -69,6 +77,7 @@ internal sealed class ChannelLogoCache : IDisposable
                 }
             }
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception) { /* Failed logos get a short negative cache, not continuous retries. */ }
         finally { _limit.Release(); }
         lock (_sync)

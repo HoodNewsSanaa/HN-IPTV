@@ -3,6 +3,7 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
@@ -10,6 +11,7 @@ using System.Windows.Controls;
 using System.Windows.Threading;
 using HnIptv;
 using HnIptv.Models;
+using HnIptv.Playback;
 
 internal static class Program
 {
@@ -85,13 +87,41 @@ internal static class Program
                 if (resets != 0) throw new InvalidOperationException("Favorite toggle rebuilt an unchanged browser.");
                 results["favorites_preserved_browser"] = true;
                 channelList.SelectedIndex = 0;
+                var initialTune = Stopwatch.StartNew();
                 await (Task)Invoke(window, "PlaySelectedAsync")!;
                 await UntilAsync(async () => (await controller.ProgressAsync()).Playing);
+                results["initial_tune_progress_ms"] = initialTune.Elapsed.TotalMilliseconds;
                 results["mpeg_ts_started"] = true;
                 channelList.SelectedIndex = 1;
                 await (Task)Invoke(window, "PlaySelectedAsync")!;
                 await UntilAsync(async () => (await controller.ProgressAsync()).Playing);
                 results["hls_started"] = true;
+                await Task.Delay(500);
+                StreamInfo? stream = null;
+                await UntilAsync(async () => { stream = await controller.ReadInfoAsync(); return stream != null && (BuildInfo.Engine == "mpc" || stream.Width > 0); });
+                results["stream_resolution"] = stream!.ResolutionText;
+                results["stream_fps"] = stream.FramesPerSecond;
+                results["stream_audio"] = stream.AudioText;
+                if (BuildInfo.Engine != "mpc" && (stream.Width <= 0 || stream.Height <= 0 || stream.FramesPerSecond <= 0))
+                    throw new InvalidOperationException("Video metadata unavailable for known fixture.");
+                Invoke(window, "StreamInfo_Click", window, new RoutedEventArgs());
+                var infoPanel = (FrameworkElement)window.FindName("StreamInfoPanel");
+                if (infoPanel.Visibility != Visibility.Visible) throw new InvalidOperationException("Stream info toggle did not open.");
+                Invoke(window, "StreamInfo_Click", window, new RoutedEventArgs());
+                if (infoPanel.Visibility != Visibility.Collapsed) throw new InvalidOperationException("Stream info toggle did not close.");
+                results["stream_info_toggle"] = true;
+                // Cancel requests occupying all four logo slots. A new category's
+                // logo must be available immediately, rather than after four slow HTTP waits.
+                using (var logos = new ChannelLogoCache(Path.Combine(root, "logo-test"))) {
+                    using var obsolete = new CancellationTokenSource();
+                    var old = Enumerable.Range(0, 4).Select(i => logos.GetAsync(server.Url + $"slow-logo-{i}.png", TimeSpan.FromHours(1), obsolete.Token)).ToArray();
+                    await Task.Delay(200); obsolete.Cancel();
+                    foreach (var request in old) { try { await request; } catch (OperationCanceledException) { } }
+                    var logoClock = Stopwatch.StartNew();
+                    var current = await logos.GetAsync(server.Url + "fast-logo.png", TimeSpan.FromHours(1), default).WaitAsync(TimeSpan.FromSeconds(2));
+                    if (current == null) throw new InvalidOperationException("Current category logo did not load after cancellation.");
+                    results["logo_after_cancel_ms"] = logoClock.Elapsed.TotalMilliseconds;
+                }
                 var tuneTimes = new List<double>();
                 for (int i = 0; i < 6; i++)
                 {
@@ -114,6 +144,30 @@ internal static class Program
                     Invoke(window, "TogglePictureInPicture");
                     var pip = (PictureInPictureWindow?)typeof(MainWindow).GetField("_pip", Private)!.GetValue(window);
                     if (pip == null) throw new InvalidOperationException("PiP failed to open.");
+                    await UntilAsync(() => Task.FromResult(pip.IsLoaded));
+                    ((DispatcherTimer)typeof(MainWindow).GetField("_infoTimer", Private)!.GetValue(window)!).Stop();
+                    pip.SetAspect(4d / 3);
+                    pip.Width = 600; await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+                    if (pip.WindowStyle != WindowStyle.None || Math.Abs(pip.ActualWidth / pip.ActualHeight - 4d / 3) > 0.02)
+                        throw new InvalidOperationException("PiP chrome or aspect constraints failed.");
+                    pip.ShowControls(false);
+                    if (pip.ControlsVisible) throw new InvalidOperationException("PiP bars remained visible.");
+                    pip.ShowControls(true);
+                    if (!pip.ControlsVisible) throw new InvalidOperationException("PiP hover bars could not open above native video.");
+                    pip.ShowControls(false);
+                    if (i == 0 && GetCursorPos(out var savedCursor)) {
+                        try {
+                            var inside = pip.PointToScreen(new Point(pip.ActualWidth / 2, pip.ActualHeight / 2));
+                            if (SetCursorPos((int)inside.X, (int)inside.Y)) {
+                                await Task.Delay(350);
+                                if (!pip.ControlsVisible) throw new InvalidOperationException("Native-video hover did not reveal PiP controls.");
+                                var outside = pip.PointToScreen(new Point(-20, -20));
+                                SetCursorPos((int)outside.X, (int)outside.Y); await Task.Delay(350);
+                                if (pip.ControlsVisible) throw new InvalidOperationException("PiP controls remained visible after mouse leave.");
+                                results["native_hover_show_hide"] = true;
+                            }
+                        } finally { SetCursorPos(savedCursor.X, savedCursor.Y); }
+                    }
                     window.WindowState = WindowState.Minimized;
                     await Task.Delay(300);
                     if (pip.WindowState == WindowState.Minimized || !pip.IsVisible || !(await controller.ProgressAsync()).Playing)
@@ -144,6 +198,11 @@ internal static class Program
                 var after = await controller.ProgressAsync();
                 if (!after.Playing || after.Time <= before.Time) throw new InvalidOperationException("Playback did not advance across fullscreen.");
                 results["fullscreen_playback_advanced"] = true;
+                // Include the decoder child in MPC-HC memory and CPU comparisons.
+                var child = typeof(PlaybackController).GetMethod("ChildMetrics", Private | BindingFlags.Public)?.Invoke(controller, null);
+                if (child is ValueTuple<long, long, double> childMetrics) {
+                    results["child_private_bytes"] = childMetrics.Item1; results["child_working_set_bytes"] = childMetrics.Item2; results["child_cpu_ms"] = childMetrics.Item3;
+                }
                 results["cpu_time_ms"] = Process.GetCurrentProcess().TotalProcessorTime.TotalMilliseconds;
                 results["private_bytes"] = Process.GetCurrentProcess().PrivateMemorySize64;
                 results["working_set_bytes"] = Process.GetCurrentProcess().WorkingSet64;
@@ -164,6 +223,9 @@ internal static class Program
         try { Directory.Delete(root, true); } catch (IOException) { }
         return exit;
     }
+    [StructLayout(LayoutKind.Sequential)] private struct CursorPoint { public int X, Y; }
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out CursorPoint point);
+    [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
     private static object? Invoke(MainWindow window, string method, params object[] args)
         => typeof(MainWindow).GetMethod(method, Private)!.Invoke(window, args);
     private static async Task UntilAsync(Func<Task<bool>> condition)
@@ -207,9 +269,13 @@ internal sealed class FixtureServer : IDisposable
                 string? request = await reader.ReadLineAsync(_stop.Token);
                 while (await reader.ReadLineAsync(_stop.Token) is { Length: > 0 }) { }
                 string name = request?.Split(' ').ElementAtOrDefault(1)?.TrimStart('/') ?? "";
-                if (name != Path.GetFileName(name) || !File.Exists(Path.Combine(directory, name))) return;
-                var bytes = await File.ReadAllBytesAsync(Path.Combine(directory, name), _stop.Token);
-                string type = name.EndsWith(".m3u8") ? "application/vnd.apple.mpegurl" : "video/mp2t";
+                if (name != Path.GetFileName(name)) return;
+                bool logo = name == "fast-logo.png" || name.StartsWith("slow-logo-", StringComparison.Ordinal);
+                if (name.StartsWith("slow-logo-", StringComparison.Ordinal)) await Task.Delay(5000, _stop.Token);
+                if (!logo && !File.Exists(Path.Combine(directory, name))) return;
+                var bytes = logo ? Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC")
+                    : await File.ReadAllBytesAsync(Path.Combine(directory, name), _stop.Token);
+                string type = logo ? "image/png" : name.EndsWith(".m3u8") ? "application/vnd.apple.mpegurl" : "video/mp2t";
                 byte[] header = Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: {type}\r\nContent-Length: {bytes.Length}\r\nConnection: close\r\n\r\n");
                 await client.GetStream().WriteAsync(header, _stop.Token);
                 await client.GetStream().WriteAsync(bytes, _stop.Token);

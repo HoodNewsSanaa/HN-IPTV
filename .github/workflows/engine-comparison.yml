@@ -1,8 +1,12 @@
-name: Compare VLC and mpv on Windows
+name: Compare VLC, mpv and MPC-HC on Windows
 on:
   workflow_dispatch:
+  pull_request:
 permissions:
   contents: read
+concurrency:
+  group: engines-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   compare:
     runs-on: windows-latest
@@ -16,15 +20,26 @@ jobs:
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-comparison-${{ hashFiles('**/*.csproj') }}
-      - name: Compare both engines on the same runner
+      - name: Compare all engines on the same runner
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force artifacts/comparison | Out-Null
-          foreach ($engine in @('vlc', 'mpv')) {
-            ./build-windows.ps1 -Engine $engine
-            Copy-Item artifacts/size-report.json "artifacts/comparison/$engine-size.json"
-            foreach ($trial in 1..3) {
-              ./test-windows.ps1 -Report "$PWD/artifacts/comparison/$engine-$trial.json"
+          foreach ($engine in @('vlc', 'mpv', 'mpc')) {
+            try {
+              ./build-windows.ps1 -Engine $engine
+              Copy-Item artifacts/size-report.json "artifacts/comparison/$engine-size.json"
+              foreach ($trial in 1..3) {
+                try { ./test-windows.ps1 -Report "$PWD/artifacts/comparison/$engine-$trial.json" }
+                catch {
+                  if (-not (Test-Path "artifacts/comparison/$engine-$trial.json")) {
+                    @{ passed=$false; engine=$engine; reason='Harness failed before report' } | ConvertTo-Json | Set-Content "artifacts/comparison/$engine-$trial.json"
+                  }
+                  Write-Warning "$engine trial $trial failed: $($_.Exception.GetType().Name)"
+                }
+              }
+            } catch {
+              @{ passed=$false; engine=$engine; reason='Engine build failed' } | ConvertTo-Json | Set-Content "artifacts/comparison/$engine-build-failure.json"
+              Write-Warning "$engine could not be compared: $($_.Exception.GetType().Name)"
             }
           }
           ./compare-engines.ps1 -Directory "$PWD/artifacts/comparison"

@@ -15,8 +15,8 @@ public sealed record PlayerSettings
         BufferMilliseconds = Math.Clamp(BufferMilliseconds, 250, 10000),
         PipLeft = double.IsFinite(PipLeft) ? PipLeft : 80,
         PipTop = double.IsFinite(PipTop) ? PipTop : 80,
-        PipWidth = double.IsFinite(PipWidth) ? Math.Clamp(PipWidth, 320, 1920) : 480,
-        PipHeight = double.IsFinite(PipHeight) ? Math.Clamp(PipHeight, 220, 1080) : 320
+        PipWidth = double.IsFinite(PipWidth) ? Math.Clamp(PipWidth, 256, 1920) : 480,
+        PipHeight = double.IsFinite(PipHeight) ? Math.Clamp(PipHeight, 64, 1080) : 320
     };
     public static PlayerSettings Load(string path) => File.Exists(path)
         ? (JsonSerializer.Deserialize<PlayerSettings>(File.ReadAllBytes(path)) ?? new()).Normalize() : new();
