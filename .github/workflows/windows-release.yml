@@ -157,7 +157,7 @@ jobs:
             gh release upload "$RELEASE_TAG" dist/HN-IPTV-Setup.exe dist/HN-IPTV-Portable.zip --clobber
           else
             printf 'Install the new setup over the existing version to preserve saved data.\n' > release-notes.txt
-            gh release create "$RELEASE_TAG" --target "$SOURCE_COMMIT" --title "HN-IPTV $RELEASE_TAG" --notes-file release-notes.txt dist/HN-IPTV-Setup.exe dist/HN-IPTV-Portable.zip
+            gh release create "$RELEASE_TAG" --latest --target "$SOURCE_COMMIT" --title "HN-IPTV $RELEASE_TAG" --notes-file release-notes.txt dist/HN-IPTV-Setup.exe dist/HN-IPTV-Portable.zip
           fi
           printf '\nSHA-256 checksums:\n```text\n' >> release-notes.txt
           cat dist/SHA256SUMS.txt >> release-notes.txt

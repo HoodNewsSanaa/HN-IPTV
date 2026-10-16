@@ -1,6 +1,6 @@
 # VLC, mpv and MPC-HC comparison
 
-mpv is now the release default. Run the **Compare VLC, mpv and MPC-HC on Windows** workflow (also triggered on pull requests) to compare three fixture trials per engine on the same Windows runner. It records payload bytes, playback-progress latency, startup, and total process memory/CPU. MPC-HC's separate child process is included. Failed tests remain failures and do not enter speed medians. Short trials cannot establish real-device or long-session stability.
+mpv is now the release default. Run the **Compare VLC, mpv and MPC-HC on Windows** workflow to compare three fixture trials per engine on the same Windows runner. It records payload bytes, playback-progress latency, startup, and total process memory/CPU. MPC-HC's separate child process is included. Failed tests remain failures and do not enter speed medians. Short trials cannot establish real-device or long-session stability.
 
 - `./build-windows.ps1 -Engine vlc`: optional VLC self-contained build.
 - `./build-windows.ps1 -Engine mpv`: default libmpv build, pinned by `mpv-build.json` archive and DLL checksums.
