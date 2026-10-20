@@ -310,10 +310,12 @@ class Engine:
                 return self.translate(self.translate(text, source, "en"), "en", target)
             raise
         tokens = tokenizer.encode(text[:3000], out_type=str)
-        if prefix:
-            tokens.insert(0, prefix)
-        translated = model.translate_batch([tokens], beam_size=4, max_decoding_length=512)[0].hypotheses[0]
+        translated = model.translate_batch([tokens], beam_size=4, length_penalty=0.2,
+            replace_unknowns=True, target_prefix=[[prefix]] if prefix else None,
+            no_repeat_ngram_size=3, max_decoding_length=min(512, max(32, len(tokens) * 4)))[0].hypotheses[0]
         result = tokenizer.decode(translated).strip()
+        if prefix and result.startswith(prefix):
+            result = result[len(prefix):].strip()
         self.cache[key] = result
         while len(self.cache) > 256:
             self.cache.popitem(last=False)

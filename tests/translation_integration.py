@@ -58,7 +58,17 @@ def main():
         draw.text((50, 70), "Hola mundo", fill="black", font=font)
         output = io.BytesIO(); image.save(output, format="PNG")
         translated_bpe = request("screen", output.getvalue(), source="es", target="en")
-        assert re.search(r"\b(hello|hey|hi)\b.*\bworld\b", translated_bpe, re.I), translated_bpe
+        if not re.search(r"\b(hello|hey|hi)\b.*\bworld\b", translated_bpe, re.I):
+            # Fixture-only diagnostics: reveal OCR and tokenization when this regression fails.
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("worker_fixture", root / "HN-IPTV/TranslationRuntime/worker.py")
+            module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+            module.block_network()
+            probe = module.Engine(args.models, "tiny", device="cpu")
+            tokenizer, _, _ = probe.pair("es", "en")
+            print("Spanish fixture tokens:", tokenizer.encode("Hola mundo", out_type=str))
+            print("Direct Spanish fixture:", probe.translate("Hola mundo", "es", "en"))
+            raise AssertionError(translated_bpe)
         report["passed"] = True
         report["network_disabled_in_worker"] = True
     finally:
