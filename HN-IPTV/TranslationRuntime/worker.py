@@ -1,0 +1,325 @@
+"""Local-only translation worker. Only --setup may access the network."""
+import argparse
+import base64
+import contextlib
+import hashlib
+import io
+import json
+import os
+from pathlib import Path
+import re
+import socket
+import sys
+import time
+import zipfile
+from collections import OrderedDict
+
+OCR_GROUPS = {
+    "latin": ["en", "es", "fr", "de", "pt", "it"],
+    "ja": ["ja", "en"], "ko": ["ko", "en"],
+    "zh": ["ch_sim", "en"], "zt": ["ch_tra", "en"],
+    "cyrillic": ["ru", "uk", "en"], "arabic": ["ar", "fa", "ur", "en"],
+    "hi": ["hi", "en"], "th": ["th", "en"],
+}
+def ocr_group(code):
+    if code in ("zh", "zt", "ja", "ko", "hi", "th"):
+        return code
+    if code in ("ru", "uk", "bg"):
+        return "cyrillic"
+    if code in ("ar", "fa", "ur"):
+        return "arabic"
+    return "latin"
+
+def normalize(code):
+    return {"zh-cn": "zh", "zh-tw": "zt"}.get(code, code.split("-")[0])
+
+def safe_extract(archive, destination):
+    root = Path(destination).resolve()
+    with zipfile.ZipFile(archive) as z:
+        if len(z.infolist()) > 20000 or sum(x.file_size for x in z.infolist()) > 2 * 1024**3:
+            raise ValueError("Model archive is too large")
+        for item in z.infolist():
+            target = (root / item.filename).resolve()
+            if root != target and root not in target.parents:
+                raise ValueError("Invalid model archive path")
+        z.extractall(root)
+
+def block_network():
+    os.environ.update(HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1",
+                      HF_HUB_DISABLE_TELEMETRY="1", DO_NOT_TRACK="1")
+    def denied(*args, **kwargs):
+        raise RuntimeError("Network access is disabled during local translation")
+    socket.socket.connect = denied
+    socket.socket.connect_ex = denied
+    socket.create_connection = denied
+    socket.getaddrinfo = denied
+
+def download(url, path):
+    from urllib.request import urlopen
+    if not url.startswith("https://"):
+        raise ValueError("Models must use HTTPS")
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".partial")
+    try:
+        with urlopen(url, timeout=60) as response, temporary.open("wb") as out:
+            if response.geturl().split(":")[0] != "https":
+                raise ValueError("Insecure model redirect")
+            count = 0
+            while True:
+                data = response.read(1024 * 1024)
+                if not data:
+                    break
+                count += len(data)
+                if count > 1024**3:
+                    raise ValueError("Model download is too large")
+                out.write(data)
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+def setup(root, source_codes, target, size, speech_only=False):
+    from faster_whisper import WhisperModel
+    from huggingface_hub import snapshot_download
+    root.mkdir(parents=True, exist_ok=True)
+    os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+    print("Preparing multilingual speech model...", flush=True)
+    model_dir = root / "speech" / size
+    if not (model_dir / "model.bin").exists():
+        snapshot_download("Systran/faster-whisper-" + size, local_dir=str(model_dir),
+                          allow_patterns=["*.bin", "*.json", "*.txt"])
+    # Verify that the locally downloaded model actually loads before marking ready.
+    WhisperModel(str(model_dir), device="cpu", compute_type="int8", local_files_only=True,
+                 cpu_threads=2)
+    sources = sorted(set(source_codes))
+    groups = []
+    previous = {}
+    ready = root / "ready.json"
+    if ready.exists():
+        previous = json.loads(ready.read_text("utf-8"))
+    if not speech_only:
+        import easyocr
+        groups = sorted(set(previous.get("ocr_groups", []) + [ocr_group(x) for x in sources]))
+        for group in groups:
+            print("Preparing screen-text model: " + group, flush=True)
+            easyocr.Reader(OCR_GROUPS[group], gpu=False, model_storage_directory=str(root / "ocr"),
+                           user_network_directory=str(root / "ocr-user"),
+                           download_enabled=True, verbose=False)
+        from urllib.request import urlopen
+        with urlopen("https://raw.githubusercontent.com/argosopentech/argospm-index/main/index.json", timeout=30) as response:
+            index = json.load(response)
+        pairs = set()
+        for code in sources:
+            if code == target:
+                continue
+            direct = next((p for p in index if p.get("from_code") == code and p.get("to_code") == target), None)
+            if direct:
+                pairs.add((code, target))
+            else:
+                if code != "en":
+                    pairs.add((code, "en"))
+                if target != "en":
+                    pairs.add(("en", target))
+        for source, dest in sorted(pairs):
+            pair_dir = root / "translate" / (source + "_" + dest)
+            if list(pair_dir.glob("*/sentencepiece.model")) or (pair_dir / "sentencepiece.model").exists():
+                continue
+            choices = [p for p in index if p.get("from_code") == source and p.get("to_code") == dest]
+            if not choices:
+                raise ValueError("No local translation pack available for " + source + " to " + dest)
+            package = choices[-1]
+            url = next((x for x in package["links"] if x.startswith("https://")), None)
+            if not url:
+                raise ValueError("No secure download for requested language pack")
+            archive = root / "downloads" / (source + "_" + dest + ".argosmodel")
+            print("Preparing translation pack: " + source + " to " + dest, flush=True)
+            download(url, archive)
+            safe_extract(archive, pair_dir)
+            archive.unlink()
+            if not list(pair_dir.rglob("sentencepiece.model")):
+                raise ValueError("This language pack uses an unsupported tokenizer: " + source + " to " + dest)
+    content = {
+        "schema": 1, "speech_models": sorted(set(previous.get("speech_models", []) + [size])),
+        "ocr_groups": groups or previous.get("ocr_groups", []), "inputs": sources,
+        "target": target, "created": time.time()
+    }
+    temp = ready.with_suffix(".tmp")
+    temp.write_text(json.dumps(content), "utf-8")
+    temp.replace(ready)
+    print("Local translation models are ready.", flush=True)
+
+class Engine:
+    def __init__(self, root, size):
+        self.root = Path(root)
+        self.size = size
+        self.speech = None
+        self.readers = OrderedDict()
+        self.translators = OrderedDict()
+        self.cache = OrderedDict()
+        self.last_language = None
+        self.last_speech = ""
+        self.ready = json.loads((self.root / "ready.json").read_text("utf-8"))
+
+    def pair(self, source, target):
+        key = source + "_" + target
+        if key in self.translators:
+            self.translators.move_to_end(key)
+            return self.translators[key]
+        import ctranslate2
+        import sentencepiece
+        directory = self.root / "translate" / key
+        files = list(directory.rglob("sentencepiece.model"))
+        if not files:
+            raise ValueError("Install the local language pack for " + source + " to " + target + " in Translation settings.")
+        folder = files[0].parent
+        meta = json.loads((folder / "metadata.json").read_text("utf-8"))
+        tokenizer = sentencepiece.SentencePieceProcessor(model_file=str(files[0]))
+        translator = ctranslate2.Translator(str(folder / "model"), device="cpu", compute_type="int8",
+                                           inter_threads=1, intra_threads=2)
+        result = (tokenizer, translator, meta.get("target_prefix", ""))
+        self.translators[key] = result
+        while len(self.translators) > 3:
+            self.translators.popitem(last=False)
+        return result
+
+    def translate(self, text, source, target):
+        text = text.strip()
+        if not text or source == target:
+            return text
+        key = (source, target, text)
+        if key in self.cache:
+            self.cache.move_to_end(key)
+            return self.cache[key]
+        try:
+            tokenizer, model, prefix = self.pair(source, target)
+        except ValueError:
+            if source != "en" and target != "en":
+                return self.translate(self.translate(text, source, "en"), "en", target)
+            raise
+        tokens = tokenizer.encode((prefix + text)[:3000], out_type=str)
+        translated = model.translate_batch([tokens], beam_size=2, max_decoding_length=512)[0].hypotheses[0]
+        result = tokenizer.decode(translated).strip()
+        self.cache[key] = result
+        while len(self.cache) > 256:
+            self.cache.popitem(last=False)
+        return result
+
+    def audio(self, payload, source, target):
+        from faster_whisper import WhisperModel
+        import numpy as np
+        import wave
+        if self.speech is None:
+            self.speech = WhisperModel(str(self.root / "speech" / self.size), device="cpu",
+                compute_type="int8", cpu_threads=max(1, min(4, (os.cpu_count() or 2) // 2)),
+                num_workers=1, local_files_only=True)
+        with wave.open(io.BytesIO(payload), "rb") as wav:
+            if wav.getnchannels() != 2 or wav.getsampwidth() != 2 or wav.getframerate() != 44100:
+                raise ValueError("Expected app loopback stereo PCM16 at 44100 Hz")
+            signal = np.frombuffer(wav.readframes(wav.getnframes()), dtype="<i2").reshape(-1, 2).mean(axis=1) / 32768.0
+        if len(signal) == 0 or float(np.sqrt(np.mean(signal**2))) < 0.002:
+            return {"text": "", "source": source, "target": target}
+        signal = np.interp(np.arange(0, len(signal), 44100 / 16000), np.arange(len(signal)), signal).astype(np.float32)
+        segments, info = self.speech.transcribe(signal, language=None if source == "auto" else source,
+            task="translate" if target == "en" else "transcribe",
+            beam_size=1, condition_on_previous_text=False, vad_filter=False,
+            no_speech_threshold=0.65, temperature=0)
+        text = " ".join(s.text.strip() for s in segments if s.no_speech_prob < 0.65).strip()
+        detected = normalize(info.language)
+        self.last_language = detected
+        if target != "en":
+            text = self.translate(text, detected, target)
+        # The audio windows overlap by one second. Remove repeated word prefixes.
+        words = text.split()
+        old = self.last_speech.split()
+        for size in range(min(len(old), len(words), 20), 0, -1):
+            if [x.casefold() for x in old[-size:]] == [x.casefold() for x in words[:size]]:
+                words = words[size:]
+                break
+        self.last_speech = text
+        return {"text": " ".join(words), "source": detected, "target": target}
+
+    def screen(self, payload, source, target):
+        import easyocr
+        import numpy as np
+        from PIL import Image
+        from langdetect import detect, DetectorFactory
+        DetectorFactory.seed = 0
+        image = Image.open(io.BytesIO(payload)).convert("RGB")
+        image.thumbnail((1280, 720))
+        installed = self.ready.get("ocr_groups", [])
+        groups = [ocr_group(source)] if source != "auto" else installed
+        if not groups:
+            raise ValueError("Install screen-text models in Translation settings.")
+        best = []
+        best_score = 0
+        for group in groups:
+            if group not in installed:
+                raise ValueError("Install the " + group + " screen-text model in Translation settings.")
+            if group not in self.readers:
+                self.readers[group] = easyocr.Reader(OCR_GROUPS[group], gpu=False,
+                    model_storage_directory=str(self.root / "ocr"),
+                    user_network_directory=str(self.root / "ocr-user"),
+                    download_enabled=False, verbose=False)
+                while len(self.readers) > 2:
+                    self.readers.popitem(last=False)
+            found = self.readers[group].readtext(np.asarray(image), detail=1, paragraph=False,
+                canvas_size=1280, batch_size=1, workers=0)
+            good = [(box, text, float(conf)) for box, text, conf in found if conf >= 0.45 and len(text.strip()) > 1]
+            score = sum(min(len(text), 40) * conf for _, text, conf in good)
+            if score > best_score:
+                best = good
+                best_score = score
+        lines = [text for _, text, _ in sorted(best, key=lambda row: (row[0][0][1], row[0][0][0]))]
+        text = "\n".join(lines[:10])[:1500]
+        if not text:
+            return {"text": "", "source": source, "target": target}
+        if source == "auto":
+            try:
+                detected = normalize(detect(text))
+            except Exception:
+                detected = self.last_language or "en"
+        else:
+            detected = source
+        translated = self.translate(text, detected, target)
+        return {"text": translated, "source": detected, "target": target}
+
+def run(root, size):
+    block_network()
+    engine = Engine(root, size)
+    # Stdout is only the protocol. Third-party diagnostic output goes to stderr.
+    protocol = sys.stdout
+    sys.stdout = sys.stderr
+    for line in sys.stdin:
+        if len(line) > 8 * 1024 * 1024:
+            break
+        try:
+            request = json.loads(line)
+            source = request.get("source", "auto")
+            target = request.get("target", "en")
+            if not re.fullmatch(r"auto|[a-z]{2,3}", source) or not re.fullmatch(r"[a-z]{2,3}", target):
+                raise ValueError("Unsupported language code")
+            payload = base64.b64decode(request["data"], validate=True)
+            with contextlib.redirect_stdout(sys.stderr):
+                result = engine.audio(payload, source, target) if request["kind"] == "audio" else engine.screen(payload, source, target)
+            result["id"] = request["id"]
+        except Exception as error:
+            result = {"id": request.get("id", 0) if "request" in locals() else 0,
+                      "text": "", "source": "", "target": "", "error": str(error)[:400]}
+        protocol.write(json.dumps(result, ensure_ascii=True) + "\n")
+        protocol.flush()
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--models", required=True)
+    parser.add_argument("--size", choices=["tiny", "base", "small"], default="base")
+    parser.add_argument("--setup", action="store_true")
+    parser.add_argument("--speech-only", action="store_true")
+    parser.add_argument("--inputs", default="en,es,fr,de,pt,it")
+    parser.add_argument("--target", default="en")
+    args = parser.parse_args()
+    root = Path(args.models)
+    if args.setup:
+        setup(root, [x.strip() for x in args.inputs.split(",") if re.fullmatch(r"[a-z]{2,3}", x.strip())],
+              args.target, args.size, args.speech_only)
+    else:
+        run(root, args.size)

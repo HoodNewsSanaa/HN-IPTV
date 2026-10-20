@@ -327,6 +327,20 @@ try
 finally { File.Delete(updateFixture); }
 Console.WriteLine("Catalog caching, reconnect budget, M3U headers, XMLTV and update integrity checks passed.");
 
+var translationSettings = new HnIptv.Translation.TranslationSettings { InputLanguage = "JA-jp", OutputLanguage = "es", SpeechModel = "invalid" }.Normalize();
+Check(translationSettings.InputLanguage == "ja" && translationSettings.Target == "es" && translationSettings.SpeechModel == "base", "translation language/model normalization");
+var translationVersion = new HnIptv.Translation.TranslationGeneration();
+long firstTranslation = translationVersion.Current;
+translationVersion.Advance();
+Check(!translationVersion.IsCurrent(firstTranslation), "channel changes invalidate old translation results");
+var translationFile = Path.Combine(Path.GetTempPath(), "hn-translation-" + Guid.NewGuid().ToString("N") + ".json");
+try {
+    translationSettings.Save(translationFile);
+    var savedTranslation = HnIptv.Translation.TranslationSettings.Load(translationFile);
+    Check(savedTranslation.InputLanguage == "ja" && savedTranslation.OutputLanguage == "es", "manual translation languages persist");
+} finally { File.Delete(translationFile); }
+Console.WriteLine("Translation settings and stale-result cancellation checks passed.");
+
 static void Check(bool condition, string name)
 {
     if (!condition) throw new Exception(name + " check failed");

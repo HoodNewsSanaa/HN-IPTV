@@ -110,6 +110,7 @@ public partial class MainWindow : Window
         _librarySaves = new(snapshot => { using var timing = App.Measure("library.save"); _library.SaveSnapshot(snapshot); });
         _preferenceSaves = new(_preferences.SaveSnapshot);
         InitializeComponent();
+        InitializeTranslation();
         CaptionsButton.Visibility = BuildInfo.Engine == "mpv" ? Visibility.Visible : Visibility.Collapsed;
         _playback.PlaybackError += () => Dispatcher.BeginInvoke(new Action(() => { if (!_closing) _ = RecoverPlaybackAsync(); }));
         Loaded += async (_, _) => { try { await Task.Delay(1500, _updateCts.Token); if (!_closing && AppStorage.TestDataDirectory == null) await CheckForUpdatesAsync(false); } catch (OperationCanceledException) { } };
@@ -775,6 +776,7 @@ public partial class MainWindow : Window
             _failedTunes.Remove(failureKey);
             _pip?.SetChannelTitle(channel.Name);
             _tuneSubmitted = true;
+            _ = RestartTranslationAsync();
             SetStatus("Buffering " + channel.Name + "...");
             await UpdateStreamInfoAsync();
         }
@@ -799,9 +801,11 @@ public partial class MainWindow : Window
     private async Task StopPlaybackAsync()
     {
         CancelRecovery();
+        var translationStop = StopTranslationSessionAsync();
         _tuneGeneration++; _tuneSubmitted = false; _tuneWatch = null; _playingChannel = null;
         _infoTimer.Stop(); _streamInfo = StreamInfo.Empty; RenderStreamInfo();
         try { await _playback.StopAsync(); } catch (Exception ex) { App.LogException("playback.stop", ex); }
+        await translationStop;
     }
     private async void Stop_Click(object sender, RoutedEventArgs e)
     {
@@ -1021,7 +1025,8 @@ public partial class MainWindow : Window
             WindowState = WindowState.Normal;
             WindowStyle = WindowStyle.None;
             ResizeMode = ResizeMode.NoResize;
-            Topmost = true;
+            // Normal fullscreen must allow Alt-Tab to move other applications above it.
+            Topmost = _oldTopmost;
             Left = a.X; Top = a.Y; Width = b.X-a.X; Height = b.Y-a.Y;
             TopBar.Visibility = Visibility.Collapsed;
             StatusStrip.Visibility = Visibility.Collapsed;
@@ -1043,7 +1048,9 @@ public partial class MainWindow : Window
             _fullscreenControls = new FullscreenControls(this,
                 () => _ = TuneSelectedAsync(true), () => Pause_Click(this, new RoutedEventArgs()),
                 () => Stop_Click(this, new RoutedEventArgs()), ToggleMute, () => _ = ToggleCaptionsAsync(),
-                ToggleFullscreen, value => VolumeSlider.Value = value, (int)VolumeSlider.Value);
+                ToggleFullscreen, value => VolumeSlider.Value = value, (int)VolumeSlider.Value,
+                () => TranslateSpeech_Click(this, new RoutedEventArgs()), () => TranslateScreen_Click(this, new RoutedEventArgs()));
+            _fullscreenControls.Reveal();
         }
         else
         {
@@ -1071,6 +1078,7 @@ public partial class MainWindow : Window
             PlayerControlsRow.Height = GridLength.Auto;
         }
         _isFullScreen = !_isFullScreen;
+        if (_isFullScreen) { Focus(); Keyboard.Focus(this); }
     }
 
     private PlaylistProfile FindOrCreateProfile(string type, string url, string identity)
@@ -1540,6 +1548,8 @@ public partial class MainWindow : Window
         e.Cancel = true;
         if (_closing) return;
         _closing = true;
+        await StopTranslationSessionAsync();
+        _translationOverlay?.Close(); _translationOverlay = null;
         CancelRecovery(); _updateCts.Cancel();
         _fullscreenControls?.Close(); _fullscreenControls = null;
         if (_pip != null) { _pip.Close(); if (_pip != null) { _closing = false; return; } }

@@ -67,6 +67,19 @@ try {
     $sentinel = Join-Path $data 'upgrade-test-sentinel.txt'
     Set-Content -LiteralPath $sentinel -Value 'synthetic test data'
     $hash = (Get-FileHash -LiteralPath $sentinel).Hash
+    $modelSentinel = Join-Path $data 'translation/models/preserved-model.bin'
+    $translationSettings = Join-Path $data 'translation-settings.json'
+    New-Item -ItemType Directory -Force ([IO.Path]::GetDirectoryName($modelSentinel)) | Out-Null
+    Set-Content -LiteralPath $modelSentinel 'synthetic cached translation model'
+    Set-Content -LiteralPath $translationSettings '{"InputLanguage":"auto","OutputLanguage":"es"}'
+    $modelHash = (Get-FileHash -LiteralPath $modelSentinel).Hash
+    $translationHash = (Get-FileHash -LiteralPath $translationSettings).Hash
+    function Assert-TranslationData {
+        if ((Get-FileHash -LiteralPath $modelSentinel).Hash -ne $modelHash -or
+            (Get-FileHash -LiteralPath $translationSettings).Hash -ne $translationHash) {
+            throw 'Upgrade changed cached translation models or language settings.'
+        }
+    }
     if ($PreviousSetup) {
         $engineManifestPath = Join-Path $PSScriptRoot 'artifacts/publish/build-manifest.json'
         $engineManifest = if (Test-Path $engineManifestPath) { Get-Content $engineManifestPath -Raw | ConvertFrom-Json } else { $null }
@@ -78,6 +91,7 @@ try {
         # Omit /DIR: the newer installer must remember the previous custom location.
         Run-Installer $setup @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-') 'version-upgrade'
         if ((Get-FileHash -LiteralPath $sentinel).Hash -ne $hash) { throw 'Version upgrade changed user data.' }
+        Assert-TranslationData
         $registeredVersion = (Get-ItemProperty -LiteralPath $registration).DisplayVersion
         if ($registeredVersion -ne $ExpectedVersion) { throw "Upgrade registered version $registeredVersion instead of $ExpectedVersion." }
         if (-not (Test-Path -LiteralPath (Join-Path $install 'HN-IPTV.exe'))) { throw 'Upgrade did not preserve the installation directory.' }
@@ -86,6 +100,7 @@ try {
     }
     Run-Installer $setup $arguments 'reinstall'
     if ((Get-FileHash -LiteralPath $sentinel).Hash -ne $hash) { throw 'Reinstall changed user data.' }
+    Assert-TranslationData
 
     # Record the attempt before launching: even a failed uninstall must not be rerun.
     $uninstallAttempted = $true

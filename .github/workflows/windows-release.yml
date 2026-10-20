@@ -4,7 +4,7 @@ on:
     inputs:
       version:
         description: Version to build
-        default: '0.10.0'
+        default: '0.11.0'
         required: true
       publish_release:
         description: Publish the tested packages as a GitHub Release
@@ -12,7 +12,7 @@ on:
         default: false
   pull_request:
   push:
-    branches: [main, master]
+    branches: [main, master, HN-IPTV-Feature-Rich]
   release:
     types: [published]
 permissions:
@@ -109,9 +109,13 @@ jobs:
           APP_VERSION: ${{ steps.version.outputs.number }}
           WILL_PUBLISH: ${{ steps.version.outputs.publish }}
         run: ./build-release.ps1 -UseExistingPublish -Version $env:APP_VERSION -QuickCompression:($env:WILL_PUBLISH -ne 'true')
-      - name: Build previous-version registration fixture
+      - name: Prepare base-version installer
         shell: pwsh
-        run: ./build-upgrade-fixture.ps1
+        env:
+          SOURCE_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          if ($env:SOURCE_BRANCH -eq 'HN-IPTV-Feature-Rich') { ./prepare-base-upgrade.ps1 }
+          else { ./build-upgrade-fixture.ps1 }
       - name: Upgrade, reinstall and uninstall preserve data
         shell: pwsh
         env:

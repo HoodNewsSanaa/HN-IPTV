@@ -13,11 +13,13 @@ internal sealed class FullscreenControls : Window
     private readonly Window _home;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(120) };
     private Point _last;
+    private readonly Action _exit;
+    internal bool ControlsVisible => IsVisible;
     private readonly Stopwatch _idle = Stopwatch.StartNew();
     public FullscreenControls(Window home, Action play, Action pause, Action stop, Action mute, Action captions,
-        Action exit, Action<int> volume, int initialVolume)
+        Action exit, Action<int> volume, int initialVolume, Action? translateSpeech = null, Action? translateText = null)
     {
-        _home = home; Owner = home; ShowActivated = false; ShowInTaskbar = false;
+        _home = home; _exit = exit; Owner = home; ShowActivated = false; ShowInTaskbar = false;
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; SizeToContent = SizeToContent.WidthAndHeight;
         Background = new SolidColorBrush(Color.FromRgb(24, 35, 56));
         var panel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(8) };
@@ -27,16 +29,32 @@ internal sealed class FullscreenControls : Window
         }
         Add("Play", play); Add("Pause", pause); Add("Stop", stop); Add("Mute (M)", mute);
         if (BuildInfo.Engine == "mpv") Add("CC", captions);
+        if (translateSpeech != null) Add("Translate speech", translateSpeech);
+        if (translateText != null && BuildInfo.Engine == "mpv") Add("Translate text", translateText);
         var slider = new Slider { Minimum = 0, Maximum = 100, Value = initialVolume, Width = 90,
             VerticalAlignment = VerticalAlignment.Center, ToolTip = "Volume" };
         slider.ValueChanged += (_, e) => volume((int)e.NewValue);
         panel.Children.Add(slider); Add("Exit fullscreen", exit); Content = panel;
-        PreviewKeyDown += (_, e) => { if (e.Key == Key.Tab) { _idle.Restart(); return; }
+        PreviewKeyDown += (_, e) => {
+            if (e.Key == Key.Escape || (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.None))
+            { e.Handled = true; _exit(); return; }
+            if (e.Key == Key.Tab) { _idle.Restart(); return; }
             var forwarded = new KeyEventArgs(e.KeyboardDevice, e.InputSource, e.Timestamp, e.Key) { RoutedEvent = PreviewKeyDownEvent };
             home.RaiseEvent(forwarded); e.Handled = forwarded.Handled; };
         _timer.Tick += (_, _) => Tick();
-        Closed += (_, _) => _timer.Stop();
+        _home.Activated += HomeActivated;
+        _home.Deactivated += HomeDeactivated;
+        Closed += (_, _) => { _timer.Stop(); _home.Activated -= HomeActivated; _home.Deactivated -= HomeDeactivated; };
         _timer.Start();
+    }
+    private void HomeActivated(object? sender, EventArgs e) => Reveal();
+    private void HomeDeactivated(object? sender, EventArgs e) => Dispatcher.BeginInvoke(new Action(() => {
+        if (!_home.IsActive && !IsActive && IsVisible) Hide();
+    }));
+    internal void Reveal()
+    {
+        _idle.Restart();
+        Tick();
     }
     private void Tick()
     {
@@ -46,7 +64,7 @@ internal sealed class FullscreenControls : Window
         var position = _home.PointFromScreen(new Point(cursor.X, cursor.Y));
         bool inside = position.X >= 0 && position.Y >= 0 && position.X < _home.ActualWidth && position.Y < _home.ActualHeight;
         if (inside && position != _last) { _last = position; _idle.Restart(); }
-        bool show = IsMouseOver || IsKeyboardFocusWithin || (inside && _idle.Elapsed < TimeSpan.FromSeconds(2.5));
+        bool show = IsMouseOver || IsKeyboardFocusWithin || _idle.Elapsed < TimeSpan.FromSeconds(3);
         if (show && !IsVisible) Show();
         else if (!show && IsVisible) Hide();
         if (IsVisible) {

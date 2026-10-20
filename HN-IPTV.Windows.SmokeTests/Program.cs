@@ -212,6 +212,17 @@ internal static class Program
                 results["rapid_tune_requests"] = 10;
                 var host = (NativeVideoHost)typeof(MainWindow).GetField("VideoView", Private | BindingFlags.Public)!.GetValue(window)!;
                 var originalHandle = host.VideoHandle;
+                if (BuildInfo.Engine == "mpv")
+                {
+                    var method = typeof(PlaybackController).GetMethod("CaptureVideoFrameAsync", Private)!;
+                    var frame = await (Task<byte[]?>)method.Invoke(controller, new object[] { CancellationToken.None })!;
+                    if (frame == null || frame.Length < 8 || frame[0] != 137 || frame[1] != 80)
+                        throw new InvalidOperationException("Video-only frame capture did not return a PNG.");
+                    results["video_only_frame_capture"] = true;
+                    await using var capture = new ProcessAudioCapture();
+                    await capture.StartAsync();
+                    results["process_loopback_activation"] = true;
+                }
                 stage = "PiP";
                 for (int i = 0; i < 5; i++)
                 {
@@ -313,8 +324,20 @@ internal static class Program
                 results["native_panel_resize_drag"] = true;
                 stage = "fullscreen";
                 var before = await controller.ProgressAsync();
+                bool wasTopmost = window.Topmost;
                 Invoke(window, "ToggleFullscreen"); await Task.Delay(1000);
-                Invoke(window, "ToggleFullscreen");
+                if (window.Topmost != wasTopmost) throw new InvalidOperationException("Fullscreen forced always-on-top.");
+                var other = new Window { Title = "Alt-Tab regression fixture", Width = 320, Height = 180 };
+                other.Show(); other.Activate();
+                await UntilAsync(() => Task.FromResult(other.IsActive));
+                window.Activate(); other.Close();
+                await UntilAsync(() => Task.FromResult(window.IsActive));
+                var fullscreen = (FullscreenControls)typeof(MainWindow).GetField("_fullscreenControls", Private)!.GetValue(window)!;
+                await UntilAsync(() => Task.FromResult(fullscreen.ControlsVisible));
+                fullscreen.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(fullscreen),
+                    Environment.TickCount, Key.Escape) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+                await UntilAsync(() => Task.FromResult(!(bool)typeof(MainWindow).GetField("_isFullScreen", Private)!.GetValue(window)!));
+                results["fullscreen_reactivation_and_escape"] = true;
                 var after = await controller.ProgressAsync();
                 if (!after.Playing || after.Time <= before.Time) throw new InvalidOperationException("Playback did not advance across fullscreen.");
                 results["fullscreen_playback_advanced"] = true;

@@ -201,6 +201,64 @@ internal sealed class PlaybackController
         }
         finally { _gate.Release(); }
     }
+
+    // Obtain only the decoded video and native captions, excluding controls and translated overlays.
+    internal async Task<byte[]?> CaptureVideoFrameAsync(CancellationToken ct)
+    {
+        if (!await _gate.WaitAsync(0, ct).ConfigureAwait(false)) return null;
+        try { return await Task.Run(() =>
+        {
+            if (_disposed || _handle == IntPtr.Zero || !_playing) return null;
+            var args = new[] { "screenshot-raw", "subtitles", "bgra" }.Select(Marshal.StringToCoTaskMemUTF8).ToArray();
+            var vector = Marshal.AllocHGlobal((args.Length + 1) * IntPtr.Size);
+            MpvNode result = default;
+            try
+            {
+                for (int i = 0; i < args.Length; i++) Marshal.WriteIntPtr(vector, i * IntPtr.Size, args[i]);
+                Marshal.WriteIntPtr(vector, args.Length * IntPtr.Size, IntPtr.Zero);
+                Check(Native.mpv_command_ret(_handle, vector, out result));
+                if (result.Format != 8 || result.Value == IntPtr.Zero) return null;
+                var map = Marshal.PtrToStructure<MpvNodeList>(result.Value);
+                int width = 0, height = 0, stride = 0; IntPtr pixels = IntPtr.Zero; long bytes = 0;
+                for (int i = 0; i < map.Count; i++)
+                {
+                    string name = Marshal.PtrToStringUTF8(Marshal.ReadIntPtr(map.Keys, i * IntPtr.Size)) ?? "";
+                    var node = Marshal.PtrToStructure<MpvNode>(map.Values + i * Marshal.SizeOf<MpvNode>());
+                    if (name == "w") width = checked((int)node.Value.ToInt64());
+                    else if (name == "h") height = checked((int)node.Value.ToInt64());
+                    else if (name == "stride") stride = checked((int)node.Value.ToInt64());
+                    else if (name == "data" && node.Format == 9) {
+                        var array = Marshal.PtrToStructure<MpvByteArray>(node.Value); pixels = array.Data; bytes = checked((long)array.Size);
+                    }
+                }
+                if (width <= 0 || height <= 0 || width > 8192 || height > 8192 ||
+                    stride < width * 4 || (long)stride * height > 128L * 1024 * 1024 ||
+                    bytes < (long)stride * height || pixels == IntPtr.Zero) return null;
+                var data = new byte[stride * height]; Marshal.Copy(pixels, data, 0, data.Length);
+                var bitmap = System.Windows.Media.Imaging.BitmapSource.Create(width, height, 96, 96,
+                    System.Windows.Media.PixelFormats.Bgra32, null, data, stride);
+                bitmap.Freeze();
+                if (width > 1280) {
+                    var scaled = new System.Windows.Media.Imaging.TransformedBitmap(bitmap,
+                        new System.Windows.Media.ScaleTransform(1280d / width, 1280d / width));
+                    scaled.Freeze(); bitmap = scaled;
+                }
+                using var output = new System.IO.MemoryStream();
+                var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap)); encoder.Save(output);
+                return output.ToArray();
+            }
+            finally {
+                Native.mpv_free_node_contents(ref result);
+                Marshal.FreeHGlobal(vector); foreach (var arg in args) Marshal.FreeCoTaskMem(arg);
+            }
+        }, ct).ConfigureAwait(false); }
+        finally { _gate.Release(); }
+    }
+    [StructLayout(LayoutKind.Sequential)] private struct MpvNode { public IntPtr Value; public int Format; }
+    [StructLayout(LayoutKind.Sequential)] private struct MpvNodeList { public int Count; public IntPtr Values, Keys; }
+    [StructLayout(LayoutKind.Sequential)] private struct MpvByteArray { public IntPtr Data; public nuint Size; }
+
     private void Set(string property, string value) => Check(Native.mpv_set_property_string(_handle, property, value));
     private static void Check(int code) { if (code < 0) throw new InvalidOperationException($"mpv operation failed ({code})."); }
     [StructLayout(LayoutKind.Sequential)]
@@ -208,6 +266,8 @@ internal sealed class PlaybackController
     private static class Native
     {
         private const string Library = "libmpv-2.dll";
+        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern int mpv_command_ret(IntPtr handle, IntPtr args, out MpvNode result);
+        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern void mpv_free_node_contents(ref MpvNode node);
         [DllImport(Library, EntryPoint = "mpv_get_property", CallingConvention = CallingConvention.Cdecl)]
         public static extern int mpv_get_property_flag(IntPtr handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string name, int format, ref int value);
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr mpv_get_property_string(IntPtr handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
