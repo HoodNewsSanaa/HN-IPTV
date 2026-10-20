@@ -964,6 +964,7 @@ public partial class MainWindow : Window
             pip.Closed += async (_, _) =>
             {
                 _pip = null;
+                ResetTranslationOverlay();
                 try
                 {
                     if (!_closing)

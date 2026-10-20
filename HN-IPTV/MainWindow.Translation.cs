@@ -33,6 +33,15 @@ public partial class MainWindow
             }
         };
     }
+    private TranslationOverlay CreateTranslationOverlay() => new(() =>
+        _pip == null ? (this, VideoView) : (_pip, _pip.VideoHost));
+    private void ResetTranslationOverlay()
+    {
+        var previous = _translationOverlay; _translationOverlay = null;
+        try { previous?.Close(); } catch (InvalidOperationException) { }
+        if (!_closing && (_translateSpeech || _translateScreen) && _playingChannel != null)
+            _translationOverlay = CreateTranslationOverlay();
+    }
     private void RenderTranslationButtons()
     {
         TranslateSpeechButton.Content = _translateSpeech ? "Speech: On" : "Translate speech";
@@ -79,8 +88,7 @@ public partial class MainWindow
             await StopTranslationResourcesAsync();
             if (!_translationGeneration.IsCurrent(generation) || _closing ||
                 (!_translateSpeech && !_translateScreen) || _playingChannel == null || !LocalTranslationRuntime.Ready) return;
-            _translationOverlay ??= new TranslationOverlay(() =>
-                _pip == null ? (this, VideoView) : (_pip, _pip.VideoHost));
+            _translationOverlay ??= CreateTranslationOverlay();
             _translationOverlay.Clear();
             var session = new CancellationTokenSource();
             _translationSession = session;
