@@ -327,6 +327,11 @@ try
 finally { File.Delete(updateFixture); }
 Console.WriteLine("Catalog caching, reconnect budget, M3U headers, XMLTV and update integrity checks passed.");
 
+var previewJson = updateJson.Replace("v0.10.0", "feature-rich-v0.10.0")
+    .Replace("\"prerelease\":false", "\"prerelease\":true");
+Check(GitHubUpdates.Parse(previewJson, new Version(0,9,2), false, true) != null, "feature update channel accepts its own previews");
+Check(GitHubUpdates.Parse(previewJson, new Version(0,9,2), false) == null, "stable update channel excludes previews");
+Check(GitHubUpdates.Parse(updateJson, new Version(0,9,2), false, true) == null, "feature update channel does not switch to stable builds");
 var translationSettings = new HnIptv.Translation.TranslationSettings { InputLanguage = "JA-jp", OutputLanguage = "es", SpeechModel = "invalid" }.Normalize();
 Check(translationSettings.InputLanguage == "ja" && translationSettings.Target == "es" && translationSettings.SpeechModel == "base", "translation language/model normalization");
 var translationVersion = new HnIptv.Translation.TranslationGeneration();

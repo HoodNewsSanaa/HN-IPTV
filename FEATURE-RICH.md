@@ -38,3 +38,5 @@ The branch runs the existing package, playback and in-place installation suite p
 - A separate real-model CPU test: generated spoken English and rendered screen text translated into Spanish with worker networking blocked.
 
 Reports and installable Windows packages are attached as GitHub Actions artifacts. This is an experimental feature build; representative foreign live content and target-device performance still need evaluation.
+
+Feature builds use the separate `feature-rich-v*` prerelease update channel. They do not replace GitHub’s latest stable release or automatically switch to the stable channel. Publication requires both the native installer/playback suite and real offline-model inference checks for the same source commit.

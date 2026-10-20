@@ -30,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name || github.ref }}
+          ref: ${{ github.event.release.tag_name || github.sha }}
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
@@ -147,24 +147,48 @@ jobs:
           retention-days: 30
   publish:
     needs: build-windows
-    if: needs.build-windows.outputs.publish == 'true'
+    if: needs.build-windows.outputs.publish == 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/HN-IPTV-Feature-Rich')
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: HN-IPTV-Windows-${{ needs.build-windows.outputs.version }}
           path: dist
+      - name: Require real offline translation checks for feature previews
+        if: github.ref == 'refs/heads/HN-IPTV-Feature-Rich'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 80); do
+            result=$(gh api "repos/$GH_REPO/actions/workflows/feature-translation.yml/runs?head_sha=$SOURCE_COMMIT&event=push&per_page=20" --jq '[.workflow_runs[] | select(.head_sha == env.SOURCE_COMMIT)] | sort_by(.id) | last | [.status // "pending", .conclusion // "pending"] | @tsv')
+            read -r state conclusion <<< "$result"
+            if [ "$state" = "completed" ]; then
+              if [ "$conclusion" = "success" ]; then exit 0; fi
+              printf 'Offline translation checks did not pass: %s\n' "$conclusion" >&2
+              exit 1
+            fi
+            sleep 15
+          done
+          printf 'Timed out waiting for offline translation checks.\n' >&2
+          exit 1
       - name: Attach the tested packages to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: v${{ needs.build-windows.outputs.version }}
+          RELEASE_TAG: ${{ github.ref == 'refs/heads/HN-IPTV-Feature-Rich' && 'feature-rich-v' || 'v' }}${{ needs.build-windows.outputs.version }}
+          FEATURE_PREVIEW: ${{ github.ref == 'refs/heads/HN-IPTV-Feature-Rich' }}
           SOURCE_COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
+          release_flags=(--latest)
+          if [ "$FEATURE_PREVIEW" = "true" ]; then release_flags=(--prerelease --latest=false); fi
           (cd dist && sha256sum -c SHA256SUMS.txt)
           # Publish complete notes/checksums atomically with the release so
           # startup checks never see a package without its verification digest.
@@ -182,5 +206,5 @@ jobs:
             gh release upload "$RELEASE_TAG" dist/HN-IPTV-Setup.exe dist/HN-IPTV-Portable.zip dist/SHA256SUMS.txt --clobber
             gh release edit "$RELEASE_TAG" --notes-file release-notes.txt
           else
-            gh release create "$RELEASE_TAG" --latest --target "$SOURCE_COMMIT" --title "HN-IPTV $RELEASE_TAG" --notes-file release-notes.txt dist/HN-IPTV-Setup.exe dist/HN-IPTV-Portable.zip dist/SHA256SUMS.txt
+            gh release create "$RELEASE_TAG" "${release_flags[@]}" --target "$SOURCE_COMMIT" --title "HN-IPTV $RELEASE_TAG" --notes-file release-notes.txt dist/HN-IPTV-Setup.exe dist/HN-IPTV-Portable.zip dist/SHA256SUMS.txt
           fi

@@ -1190,7 +1190,7 @@ public partial class MainWindow : Window
         try
         {
             var current = typeof(MainWindow).Assembly.GetName().Version ?? new Version(0, 0, 0);
-            _availableRelease = await new GitHubUpdates(_updateHttp).CheckAsync(current, AppStorage.IsPortable, _updateCts.Token);
+            _availableRelease = await new GitHubUpdates(_updateHttp).CheckAsync(current, AppStorage.IsPortable, _updateCts.Token, featureRich: true);
             if (_closing) return;
             UpdateButton.Content = _availableRelease == null ? "Check for updates" : $"Update to {_availableRelease.Version}";
             UpdateButton.ToolTip = _availableRelease == null ? "Checks GitHub Releases" : "Download and install the latest release";

@@ -9,9 +9,9 @@ public sealed record AppRelease(Version Version, string PageUrl, string AssetNam
 public sealed class GitHubUpdates(HttpClient client)
 {
     public const string Repository = "HoodNewsSanaa/HN-IPTV";
-    public async Task<AppRelease?> CheckAsync(Version current, bool portable, CancellationToken ct)
+    public async Task<AppRelease?> CheckAsync(Version current, bool portable, CancellationToken ct, bool featureRich = false)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/repos/" + Repository + "/releases/latest");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/repos/" + Repository + (featureRich ? "/releases?per_page=30" : "/releases/latest"));
         request.Headers.UserAgent.ParseAdd("HN-IPTV/" + current);
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await client.SendAsync(request, ct).ConfigureAwait(false);
@@ -20,15 +20,21 @@ public sealed class GitHubUpdates(HttpClient client)
         if (response.Content.Headers.ContentLength > 2_000_000) throw new InvalidDataException("Release response is too large.");
         var json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         if (json.Length > 2_000_000) throw new InvalidDataException("Release response is too large.");
-        return Parse(json, current, portable);
+        if (!featureRich) return Parse(json, current, portable);
+        using var releases = JsonDocument.Parse(json);
+        return releases.RootElement.EnumerateArray().Select(item => Parse(item.GetRawText(), current, portable, true))
+            .Where(item => item != null).OrderByDescending(item => item!.Version).FirstOrDefault();
     }
-    public static AppRelease? Parse(string json, Version current, bool portable)
+    public static AppRelease? Parse(string json, Version current, bool portable, bool featureRich = false)
     {
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
-        if (root.GetProperty("draft").GetBoolean() || root.GetProperty("prerelease").GetBoolean()) return null;
+        if (root.GetProperty("draft").GetBoolean() || (!featureRich && root.GetProperty("prerelease").GetBoolean())) return null;
         var tag = root.GetProperty("tag_name").GetString() ?? "";
-        if (!Version.TryParse(tag.TrimStart('v'), out var version) ||
+        const string previewPrefix = "feature-rich-v";
+        if (featureRich && !tag.StartsWith(previewPrefix, StringComparison.Ordinal)) return null;
+        string versionText = featureRich ? tag[previewPrefix.Length..] : tag.TrimStart('v');
+        if (!Version.TryParse(versionText, out var version) ||
             new Version(version.Major, version.Minor, Math.Max(0, version.Build)) <=
             new Version(current.Major, current.Minor, Math.Max(0, current.Build))) return null;
         string name = portable ? "HN-IPTV-Portable.zip" : "HN-IPTV-Setup.exe";
