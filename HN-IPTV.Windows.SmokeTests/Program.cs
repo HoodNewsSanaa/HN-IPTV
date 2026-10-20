@@ -70,6 +70,28 @@ internal static class Program
                 await UntilAsync(() => Task.FromResult(channelList.Items.Count == 2));
                 await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
                 results["selection_cancellation_regression"] = true;
+                // Identical refreshed metadata must retain the actual bound objects,
+                // not merely produce the same channel count.
+                var activeField = typeof(MainWindow).GetField("_activePlaylist", Private)!;
+                var previousProfile = activeField.GetValue(window);
+                var cachedM3u = Path.Combine(root, "cached.m3u");
+                File.WriteAllText(cachedM3u, "#EXTM3U\n#EXTINF:-1 group-title=\"Test\",Cached One\n" + server.Url + "segment00.ts");
+                var cacheFixture = await HnIptv.Services.M3uService.ParseFileAsync(cachedM3u);
+                var cacheProfile = new HnIptv.Services.PlaylistProfile { LocalPath = cachedM3u,
+                    CachedChannels = cacheFixture.ToList(), LastChannelRefresh = DateTimeOffset.UtcNow, LastLogoRefresh = DateTimeOffset.UtcNow };
+                activeField.SetValue(window, cacheProfile);
+                await (Task)Invoke(window, "SetChannelsAsync", cacheFixture, new[] { new ChannelGroup("Test", "Test") }, kind, "Cache fixture", "cache", false)!;
+                await UntilAsync(() => Task.FromResult(channelList.Items.Count == 1));
+                channelList.SelectedIndex = 0;
+                var cachedItemsSource = channelList.ItemsSource;
+                var cachedSelected = channelList.SelectedItem;
+                await (Task)Invoke(window, "RefreshActiveAsync", true)!;
+                if (!ReferenceEquals(cachedItemsSource, channelList.ItemsSource) || !ReferenceEquals(cachedSelected, channelList.SelectedItem))
+                    throw new InvalidOperationException("Unchanged refresh replaced cached rows or selection.");
+                activeField.SetValue(window, previousProfile);
+                await (Task)Invoke(window, "SetChannelsAsync", channels, new[] { new ChannelGroup("test", "Test"), new ChannelGroup("empty", "Empty") }, kind, "Test", "test", false)!;
+                await UntilAsync(() => Task.FromResult(channelList.Items.Count == 2));
+                results["unchanged_catalog_retains_objects"] = true;
                 var groups = (ListBox)typeof(MainWindow).GetField("GroupsList", Private | BindingFlags.Public)!.GetValue(window)!;
                 for (int i = 0; i < 8; i++)
                 {

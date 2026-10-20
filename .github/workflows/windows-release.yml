@@ -48,7 +48,7 @@ jobs:
           PUBLISH_REQUESTED: ${{ github.event_name == 'release' || inputs.publish_release == true || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         run: |
           $version = $env:REQUESTED_VERSION
-          if (-not $version) { [xml]$project = Get-Content HN-IPTV/HN-IPTV.csproj -Raw; $version = [string]$project.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1 }
+          if (-not $version) { [xml]$project = Get-Content HN-IPTV/HN-IPTV.csproj -Raw; $version = $project.SelectSingleNode('/Project/PropertyGroup/Version').InnerText.Trim() }
           if ($env:RELEASE_TAG) {
             if ($env:RELEASE_TAG -notmatch '^v(\d+\.\d+\.\d+)$') { throw 'Use a version tag such as v0.10.0.' }
             $version = $Matches[1]

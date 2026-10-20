@@ -112,7 +112,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         CaptionsButton.Visibility = BuildInfo.Engine == "mpv" ? Visibility.Visible : Visibility.Collapsed;
         _playback.PlaybackError += () => Dispatcher.BeginInvoke(new Action(() => { if (!_closing) _ = RecoverPlaybackAsync(); }));
-        Loaded += async (_, _) => { try { await Task.Delay(1500, _updateCts.Token); if (!_closing) await CheckForUpdatesAsync(false); } catch (OperationCanceledException) { } };
+        Loaded += async (_, _) => { try { await Task.Delay(1500, _updateCts.Token); if (!_closing && AppStorage.TestDataDirectory == null) await CheckForUpdatesAsync(false); } catch (OperationCanceledException) { } };
         _groupSearchDebounce.Tick += (_, _) => { _groupSearchDebounce.Stop(); _groupView?.Refresh();
             if (GroupsList.SelectedItem == null) GroupsList.SelectedItem = _allGroups.FirstOrDefault(FilterGroup); };
         _searchDebounce.Tick += (_, _) => { _searchDebounce.Stop(); RefreshChannels(); };
