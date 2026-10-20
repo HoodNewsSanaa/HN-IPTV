@@ -1,4 +1,4 @@
-# HN-IPTV 0.11.1 — Feature Rich preview
+# HN-IPTV 0.11.2 — Feature Rich preview
 
 See [FEATURE-RICH.md](FEATURE-RICH.md) for local translation setup, fullscreen fixes and installable branch artifacts. The installer upgrades an existing stable copy in place and preserves saved data.
 
@@ -28,7 +28,7 @@ On Windows with .NET 10 SDK and Inno Setup 6:
 ./test-core.ps1
 ./build-windows.ps1
 ./test-windows.ps1
-./build-release.ps1 -Version 0.11.1
+./build-release.ps1 -Version 0.11.2
 ```
 
 `-PortableOnly` skips Inno Setup. `-FastStartup` enables ReadyToRun for comparison; the size-oriented default is off. WPF trimming and single-file extraction remain disabled.

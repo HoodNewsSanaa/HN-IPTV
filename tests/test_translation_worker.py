@@ -22,6 +22,17 @@ class WorkerTests(unittest.TestCase):
                 worker.safe_extract(archive, Path(temp) / "models")
             self.assertFalse((Path(temp) / "outside.txt").exists())
 
+    def test_cached_bpe_and_sentencepiece_packages_are_recognized(self):
+        with tempfile.TemporaryDirectory() as temp:
+            for name in ("sentencepiece.model", "bpe.model"):
+                folder = Path(temp) / name.replace(".", "_")
+                (folder / "model").mkdir(parents=True)
+                (folder / "metadata.json").write_text("{}")
+                (folder / name).write_text("tokenizer")
+                self.assertIsNone(worker.package_folder(folder))
+                (folder / "model/model.bin").write_bytes(b"model")
+                self.assertEqual(worker.package_folder(folder), folder)
+
     def test_offline_worker_denies_connections_and_dns(self):
         code = ("import importlib.util,socket; "
                 "s=importlib.util.spec_from_file_location('w',sys.argv[1]); "

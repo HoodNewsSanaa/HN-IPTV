@@ -25,16 +25,16 @@ def main():
         stderr=subprocess.DEVNULL, text=True, encoding="utf-8")
     report = {}
     try:
-        def request(kind, payload):
+        def request(kind, payload, source="auto", target="es"):
             start = time.monotonic()
             process.stdin.write(json.dumps({"id": 1, "kind": kind, "data": base64.b64encode(payload).decode(),
-                                           "source": "auto", "target": "es"}) + "\n")
+                                           "source": source, "target": target}) + "\n")
             process.stdin.flush()
             response = json.loads(process.stdout.readline())
             if response.get("error"):
                 raise RuntimeError(response["error"])
-            report[kind + "_seconds"] = time.monotonic() - start
-            report[kind + "_result"] = response
+            report[kind + "_" + target + "_seconds"] = time.monotonic() - start
+            report[kind + "_" + target + "_result"] = response
             return response["text"]
         with wave.open(args.audio, "rb") as audio:
             data = np.frombuffer(audio.readframes(audio.getnframes()), dtype="<i2")
@@ -54,6 +54,11 @@ def main():
         output = io.BytesIO(); image.save(output, format="PNG")
         translated_text = request("screen", output.getvalue())
         assert re.search("hola|mundo", translated_text, re.I), translated_text
+        draw.rectangle((0, 0, 1000, 260), fill="white")
+        draw.text((50, 70), "Hola mundo", fill="black", font=font)
+        output = io.BytesIO(); image.save(output, format="PNG")
+        translated_bpe = request("screen", output.getvalue(), source="es", target="en")
+        assert re.search("hello.*world", translated_bpe, re.I), translated_bpe
         report["passed"] = True
         report["network_disabled_in_worker"] = True
     finally:

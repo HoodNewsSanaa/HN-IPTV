@@ -13,7 +13,7 @@ internal static class LocalTranslationRuntime
     internal static string Python => Path.Combine(Root, "python", "python.exe");
     internal static string Models => Path.Combine(Root, "models");
     internal static string Worker => Path.Combine(AppContext.BaseDirectory, "TranslationRuntime", "worker.py");
-    internal static bool Ready => File.Exists(Python) && File.Exists(Path.Combine(Models, "ready.json"));
+    internal static bool Ready => File.Exists(Python) && File.Exists(Path.Combine(Root, "dependencies-v2.ready")) && File.Exists(Path.Combine(Models, "ready.json"));
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(20) };
     private const string PythonHash = "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3";
 
@@ -46,14 +46,14 @@ internal static class LocalTranslationRuntime
             string site = Path.Combine(Path.GetDirectoryName(Python)!, "Lib", "site-packages");
             Directory.CreateDirectory(site); ZipFile.ExtractToDirectory(archive, site, true); File.Delete(archive);
         }
-        string ready = Path.Combine(Root, "dependencies-v1.ready");
+        string ready = Path.Combine(Root, "dependencies-v2.ready");
         if (!File.Exists(ready))
         {
             progress("Installing CPU translation and recognition libraries. This may take several minutes...");
-            await RunAsync(["-m", "pip", "install", "--disable-pip-version-check", "setuptools==80.9.0", "wheel==0.45.1"], progress, ct);
-            await RunAsync(["-m", "pip", "install", "--disable-pip-version-check", "--index-url", "https://download.pytorch.org/whl/cpu",
+            await RunAsync(["-m", "pip", "install", "--disable-pip-version-check", "--no-warn-script-location", "setuptools==80.9.0", "wheel==0.45.1"], progress, ct);
+            await RunAsync(["-m", "pip", "install", "--disable-pip-version-check", "--no-warn-script-location", "--index-url", "https://download.pytorch.org/whl/cpu",
                 "torch==2.8.0", "torchvision==0.23.0"], progress, ct);
-            await RunAsync(["-m", "pip", "install", "--disable-pip-version-check", "-r",
+            await RunAsync(["-m", "pip", "install", "--disable-pip-version-check", "--no-warn-script-location", "-r",
                 Path.Combine(AppContext.BaseDirectory, "TranslationRuntime", "requirements.txt")], progress, ct);
             await File.WriteAllTextAsync(ready, "1", ct);
         }

@@ -1,3 +1,10 @@
+# 0.11.2 Feature Rich preview
+
+- Fix setup and local translation for Spanish-to-English and other BPE language packs.
+- Reuse previously downloaded BPE packs when retrying setup.
+- Install tokenizer dependencies during upgrade and suppress private Python PATH warnings.
+- Validate both translation directions with real models and networking disabled.
+
 # 0.11.1 — Feature Rich preview
 
 - Keep translated captions working when returning from picture in picture to the main player.

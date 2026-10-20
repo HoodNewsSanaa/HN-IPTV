@@ -21,6 +21,9 @@ var settings = new TranslationSettings { SpeechModel = "tiny", InstalledInputs =
 var install = (Task)runtime.GetMethod("InstallAsync", BindingFlags.Static | BindingFlags.NonPublic)!
     .Invoke(null, [settings, (Action<string>)Console.WriteLine, CancellationToken.None])!;
 await install;
+// Exercise the BPE Spanish-to-English pack as well as SentencePiece English-to-Spanish.
+await (Task)runtime.GetMethod("InstallAsync", BindingFlags.Static | BindingFlags.NonPublic)!
+    .Invoke(null, [settings with { OutputLanguage = "en" }, (Action<string>)Console.WriteLine, CancellationToken.None])!;
 string python = (string)runtime.GetProperty("Python", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
 string models = (string)runtime.GetProperty("Models", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
 File.WriteAllText(args[2], JsonSerializer.Serialize(new { python, models, passed = true }));

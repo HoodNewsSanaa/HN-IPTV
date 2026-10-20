@@ -96,6 +96,33 @@ def download_package(package, path):
             errors.append(type(error).__name__ + ": " + str(error))
     raise ValueError("Language-pack download failed: " + "; ".join(errors))
 
+
+def package_folder(directory):
+    """Accept both publisher tokenizer formats and only complete model folders."""
+    for metadata in sorted(Path(directory).rglob("metadata.json")):
+        folder = metadata.parent
+        if ((folder / "model" / "model.bin").is_file()
+                and any((folder / name).is_file() for name in ("sentencepiece.model", "bpe.model"))):
+            return folder
+    return None
+
+class BPETokenizer:
+    def __init__(self, model_file, source, target):
+        from sacremoses import MosesPunctNormalizer, MosesTokenizer, MosesDetokenizer
+        from subword_nmt.apply_bpe import BPE
+        self.normalizer = MosesPunctNormalizer(lang=source)
+        self.tokenizer = MosesTokenizer(lang=source)
+        self.detokenizer = MosesDetokenizer(lang=target)
+        with Path(model_file).open(encoding="utf-8") as codes:
+            self.bpe = BPE(codes)
+
+    def encode(self, text, out_type=str):
+        words = self.tokenizer.tokenize(self.normalizer.normalize(text))
+        return self.bpe.segment_tokens(words)
+
+    def decode(self, tokens):
+        return self.detokenizer.detokenize(" ".join(tokens).replace("@@ ", "").split(" "))
+
 def setup(root, source_codes, target, size, speech_only=False):
     from faster_whisper import WhisperModel
     from huggingface_hub import snapshot_download
@@ -140,7 +167,7 @@ def setup(root, source_codes, target, size, speech_only=False):
                     pairs.add(("en", target))
         for source, dest in sorted(pairs):
             pair_dir = root / "translate" / (source + "_" + dest)
-            if list(pair_dir.glob("*/sentencepiece.model")) or (pair_dir / "sentencepiece.model").exists():
+            if package_folder(pair_dir) is not None:
                 continue
             choices = [p for p in index if p.get("from_code") == source and p.get("to_code") == dest]
             if not choices:
@@ -154,8 +181,8 @@ def setup(root, source_codes, target, size, speech_only=False):
             download_package(package, archive)
             safe_extract(archive, pair_dir)
             archive.unlink()
-            if not list(pair_dir.rglob("sentencepiece.model")):
-                raise ValueError("This language pack uses an unsupported tokenizer: " + source + " to " + dest)
+            if package_folder(pair_dir) is None:
+                raise ValueError("Incomplete or unsupported language pack: " + source + " to " + dest)
     content = {
         "schema": 1, "speech_models": sorted(set(previous.get("speech_models", []) + [size])),
         "ocr_groups": groups or previous.get("ocr_groups", []), "inputs": sources,
@@ -186,12 +213,13 @@ class Engine:
         import ctranslate2
         import sentencepiece
         directory = self.root / "translate" / key
-        files = list(directory.rglob("sentencepiece.model"))
-        if not files:
+        folder = package_folder(directory)
+        if folder is None:
             raise ValueError("Install the local language pack for " + source + " to " + target + " in Translation settings.")
-        folder = files[0].parent
         meta = json.loads((folder / "metadata.json").read_text("utf-8"))
-        tokenizer = sentencepiece.SentencePieceProcessor(model_file=str(files[0]))
+        tokenizer = (sentencepiece.SentencePieceProcessor(model_file=str(folder / "sentencepiece.model"))
+                     if (folder / "sentencepiece.model").is_file()
+                     else BPETokenizer(folder / "bpe.model", source, target))
         translator = ctranslate2.Translator(str(folder / "model"), device="cpu", compute_type="int8",
                                            inter_threads=1, intra_threads=2)
         result = (tokenizer, translator, meta.get("target_prefix", ""))
