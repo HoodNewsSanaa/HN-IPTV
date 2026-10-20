@@ -271,6 +271,15 @@ internal static class Program
                             }
                         } finally { SetCursorPos(savedCursor.X, savedCursor.Y); }
                     }
+                    TranslationOverlay? translationBeforeReturn = null;
+                    if (i == 4)
+                    {
+                        typeof(MainWindow).GetField("_translateSpeech", Private)!.SetValue(window, true);
+                        Invoke(window, "ResetTranslationOverlay");
+                        translationBeforeReturn = (TranslationOverlay)typeof(MainWindow).GetField("_translationOverlay", Private)!.GetValue(window)!;
+                        translationBeforeReturn.SetSpeech("Local translation overlay fixture");
+                        await UntilAsync(() => Task.FromResult(translationBeforeReturn.IsVisible && translationBeforeReturn.Owner == pip));
+                    }
                     window.WindowState = WindowState.Minimized;
                     await Task.Delay(300);
                     if (pip.WindowState == WindowState.Minimized || !pip.IsVisible || !(await controller.ProgressAsync()).Playing)
@@ -279,6 +288,17 @@ internal static class Program
                     if ((PictureInPictureWindow?)typeof(MainWindow).GetField("_pip", Private)!.GetValue(window) != null) throw new InvalidOperationException("P did not return from PiP.");
                     window.WindowState = WindowState.Normal;
                     await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+                    if (i == 4)
+                    {
+                        var restoredTranslation = (TranslationOverlay)typeof(MainWindow).GetField("_translationOverlay", Private)!.GetValue(window)!;
+                        if (ReferenceEquals(restoredTranslation, translationBeforeReturn))
+                            throw new InvalidOperationException("PiP return retained the closed translation overlay.");
+                        restoredTranslation.SetSpeech("Restored local translation overlay");
+                        await UntilAsync(() => Task.FromResult(restoredTranslation.IsVisible && restoredTranslation.Owner == window));
+                        typeof(MainWindow).GetField("_translateSpeech", Private)!.SetValue(window, false);
+                        Invoke(window, "ResetTranslationOverlay");
+                        results["translation_overlay_survives_pip_return"] = true;
+                    }
                     if (host.VideoHandle != originalHandle || !(await controller.ProgressAsync()).Playing)
                         throw new InvalidOperationException("PiP replaced the video target or interrupted playback.");
                 }
