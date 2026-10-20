@@ -33,7 +33,7 @@ internal sealed class ProcessAudioCapture : IAsyncDisposable
             var variant = new PropVariant { Type = 65, Size = 12, Data = callback.Parameters };
             Marshal.StructureToPtr(variant, callback.Variant, false);
             Guid iid = typeof(IAudioClient).GUID;
-            Marshal.ThrowExceptionForHR(ActivateAudioInterfaceAsync("VAD\\\\Process_Loopback", ref iid, callback.Variant, callback.Pointer, out var operation));
+            Marshal.ThrowExceptionForHR(ActivateAudioInterfaceAsync("VAD\\Process_Loopback", ref iid, callback.Variant, callback.Pointer, out var operation));
             try { client = callback.Result.Task.WaitAsync(TimeSpan.FromSeconds(10), _stop.Token).GetAwaiter().GetResult(); }
             finally { Marshal.Release(operation); GC.KeepAlive(callback); }
             var format = new WaveFormat { Tag = 1, Channels = 2, Rate = 44100, BytesPerSecond = 176400, Alignment = 4, Bits = 16 };

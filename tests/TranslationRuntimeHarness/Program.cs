@@ -1,0 +1,19 @@
+using System.Reflection;
+using System.Runtime.Loader;
+using System.Text.Json;
+using HnIptv.Translation;
+
+if (args.Length != 3) throw new ArgumentException("Expected published assembly, synthetic data directory and report path.");
+var assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.GetFullPath(args[0]));
+var storage = assembly.GetType("HnIptv.AppStorage", true)!;
+storage.GetProperty("TestDataDirectory", BindingFlags.Static | BindingFlags.NonPublic)!.SetValue(null, Path.GetFullPath(args[1]));
+storage.GetMethod("Initialize", BindingFlags.Static | BindingFlags.Public)!.Invoke(null, null);
+var runtime = assembly.GetType("HnIptv.LocalTranslationRuntime", true)!;
+var settings = new TranslationSettings { SpeechModel = "tiny", InstalledInputs = ["en", "es"], OutputLanguage = "es" };
+var install = (Task)runtime.GetMethod("InstallAsync", BindingFlags.Static | BindingFlags.NonPublic)!
+    .Invoke(null, [settings, (Action<string>)Console.WriteLine, CancellationToken.None])!;
+await install;
+string python = (string)runtime.GetProperty("Python", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+string models = (string)runtime.GetProperty("Models", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
+File.WriteAllText(args[2], JsonSerializer.Serialize(new { python, models, passed = true }));
+Console.WriteLine("The same private-runtime setup used by the app completed.");
