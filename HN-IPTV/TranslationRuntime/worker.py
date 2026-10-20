@@ -287,7 +287,7 @@ class Engine:
                      if (folder / "sentencepiece.model").is_file()
                      else BPETokenizer(folder / "bpe.model", source, target))
         translator = ctranslate2.Translator(str(folder / "model"), device=self.device,
-                                           compute_type="int8_float16" if self.device == "cuda" else "int8",
+                                           compute_type="float16" if self.device == "cuda" else "float32",
                                            inter_threads=1, intra_threads=2)
         result = (tokenizer, translator, meta.get("target_prefix", ""))
         self.translators[key] = result

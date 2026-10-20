@@ -68,6 +68,14 @@ def main():
             tokenizer, _, _ = probe.pair("es", "en")
             print("Spanish fixture tokens:", tokenizer.encode("Hola mundo", out_type=str))
             print("Direct Spanish fixture:", probe.translate("Hola mundo", "es", "en"))
+            import ctranslate2
+            folder = module.package_folder(Path(args.models) / "translate/es_en")
+            for numeric in ("int8", "float32"):
+                model = ctranslate2.Translator(str(folder / "model"), device="cpu", compute_type=numeric, inter_threads=1, intra_threads=2)
+                for beam in (1, 2, 4):
+                    result = model.translate_batch([["Hola", "mundo"]], beam_size=beam, length_penalty=0.2, max_decoding_length=32)[0]
+                    print("Diagnostic", numeric, beam, result.hypotheses)
+                del model
             raise AssertionError(translated_bpe)
         report["passed"] = True
         report["network_disabled_in_worker"] = True
