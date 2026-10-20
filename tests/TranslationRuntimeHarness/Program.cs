@@ -17,7 +17,7 @@ var storage = assembly.GetType("HnIptv.AppStorage", true)!;
 storage.GetProperty("TestDataDirectory", BindingFlags.Static | BindingFlags.NonPublic)!.SetValue(null, Path.GetFullPath(args[1]));
 storage.GetMethod("Initialize", BindingFlags.Static | BindingFlags.Public)!.Invoke(null, null);
 var runtime = assembly.GetType("HnIptv.LocalTranslationRuntime", true)!;
-var settings = new TranslationSettings { SpeechModel = "tiny", InstalledInputs = ["en", "es"], OutputLanguage = "es" };
+var settings = new TranslationSettings { SpeechModel = "tiny", Acceleration = "cpu", InstalledInputs = ["en", "es"], OutputLanguage = "es" };
 var install = (Task)runtime.GetMethod("InstallAsync", BindingFlags.Static | BindingFlags.NonPublic)!
     .Invoke(null, [settings, (Action<string>)Console.WriteLine, CancellationToken.None])!;
 await install;

@@ -40,3 +40,11 @@ The branch runs the existing package, playback and in-place installation suite p
 Reports and installable Windows packages are attached as GitHub Actions artifacts. This is an experimental feature build; representative foreign live content and target-device performance still need evaluation.
 
 Feature builds use the separate `feature-rich-v*` prerelease update channel. They do not replace GitHub’s latest stable release or automatically switch to the stable channel. Publication requires both the native installer/playback suite and real offline-model inference checks for the same source commit.
+
+## NVIDIA GPU acceleration
+
+Translation settings now offer `auto`, `cuda` and `cpu`. Preparing models with Auto detects an NVIDIA GPU and installs the official PyTorch 2.8 / CUDA 12.8 runtime privately; CPU mode skips this extra download. CUDA libraries require several additional GB and remain cached. No system Python, PATH or CUDA Toolkit changes are required.
+
+Speech recognition, OCR and text translation use CUDA when available. Startup or inference failures (including GPU memory exhaustion) fall back to CPU and the app reports the active backend. Setup runs a short CUDA speech inference to check the libraries. On an RTX 4050 6 GB, start with `small`; `medium` is available for better recognition at increased memory and processing cost. GPU speed alone cannot improve the translation model itself. Decoding now considers more hypotheses. Explicit input language can help with short, noisy or multilingual clips.
+
+Automated Windows tests exercise real CPU model inference plus CUDA-unavailable and out-of-memory fallback cases. Hosted CI has no NVIDIA GPU, so actual CUDA performance must be checked on GPU hardware.

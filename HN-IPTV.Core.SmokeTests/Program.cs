@@ -332,17 +332,20 @@ var previewJson = updateJson.Replace("v0.10.0", "feature-rich-v0.10.0")
 Check(GitHubUpdates.Parse(previewJson, new Version(0,9,2), false, true) != null, "feature update channel accepts its own previews");
 Check(GitHubUpdates.Parse(previewJson, new Version(0,9,2), false) == null, "stable update channel excludes previews");
 Check(GitHubUpdates.Parse(updateJson, new Version(0,9,2), false, true) == null, "feature update channel does not switch to stable builds");
-var translationSettings = new HnIptv.Translation.TranslationSettings { InputLanguage = "JA-jp", OutputLanguage = "es", SpeechModel = "invalid" }.Normalize();
+var translationSettings = new HnIptv.Translation.TranslationSettings { InputLanguage = "JA-jp", OutputLanguage = "es", SpeechModel = "invalid", Acceleration = "invalid" }.Normalize();
 Check(translationSettings.InputLanguage == "ja" && translationSettings.Target == "es" && translationSettings.SpeechModel == "base", "translation language/model normalization");
+Check(translationSettings.Acceleration == "auto", "invalid acceleration falls back to auto");
+var gpuSettings = (translationSettings with { SpeechModel = "medium", Acceleration = "cuda" }).Normalize();
+Check(gpuSettings.SpeechModel == "medium" && gpuSettings.Acceleration == "cuda", "medium GPU translation settings remain selectable");
 var translationVersion = new HnIptv.Translation.TranslationGeneration();
 long firstTranslation = translationVersion.Current;
 translationVersion.Advance();
 Check(!translationVersion.IsCurrent(firstTranslation), "channel changes invalidate old translation results");
 var translationFile = Path.Combine(Path.GetTempPath(), "hn-translation-" + Guid.NewGuid().ToString("N") + ".json");
 try {
-    translationSettings.Save(translationFile);
+    gpuSettings.Save(translationFile);
     var savedTranslation = HnIptv.Translation.TranslationSettings.Load(translationFile);
-    Check(savedTranslation.InputLanguage == "ja" && savedTranslation.OutputLanguage == "es", "manual translation languages persist");
+    Check(savedTranslation.InputLanguage == "ja" && savedTranslation.OutputLanguage == "es" && savedTranslation.Acceleration == "cuda", "manual translation languages and GPU preference persist");
 } finally { File.Delete(translationFile); }
 Console.WriteLine("Translation settings and stale-result cancellation checks passed.");
 

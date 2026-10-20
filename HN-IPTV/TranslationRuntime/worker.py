@@ -2,6 +2,7 @@
 import argparse
 import base64
 import contextlib
+import gc
 import hashlib
 import io
 import json
@@ -123,7 +124,29 @@ class BPETokenizer:
     def decode(self, tokens):
         return self.detokenizer.detokenize(" ".join(tokens).replace("@@ ", "").split(" "))
 
-def setup(root, source_codes, target, size, speech_only=False):
+
+_DLL_HANDLES = []
+def select_device(requested):
+    if requested == "cpu":
+        return "cpu", None
+    try:
+        # The official Windows CUDA torch wheel includes cuBLAS/cuDNN in torch/lib.
+        # Keep DLL directory handles alive; PATH changes apply only to this worker.
+        if os.name == "nt":
+            library = Path(sys.executable).parent / "Lib/site-packages/torch/lib"
+            if library.is_dir():
+                _DLL_HANDLES.append(os.add_dll_directory(str(library)))
+                os.environ["PATH"] = str(library) + os.pathsep + os.environ.get("PATH", "")
+        import torch
+        import ctranslate2
+        if torch.cuda.is_available() and ctranslate2.get_cuda_device_count() > 0:
+            return "cuda", None
+        return "cpu", ("NVIDIA CUDA is unavailable; using CPU. Prepare CUDA in Translation settings."
+                       if requested == "cuda" else None)
+    except (ImportError, RuntimeError, OSError):
+        return "cpu", "CUDA could not load; using CPU. Prepare CUDA in Translation settings."
+
+def setup(root, source_codes, target, size, speech_only=False, device="cpu"):
     from faster_whisper import WhisperModel
     from huggingface_hub import snapshot_download
     root.mkdir(parents=True, exist_ok=True)
@@ -133,9 +156,28 @@ def setup(root, source_codes, target, size, speech_only=False):
     if not (model_dir / "model.bin").exists():
         snapshot_download("Systran/faster-whisper-" + size, local_dir=str(model_dir),
                           allow_patterns=["*.bin", "*.json", "*.txt"])
-    # Verify that the locally downloaded model actually loads before marking ready.
-    WhisperModel(str(model_dir), device="cpu", compute_type="int8", local_files_only=True,
-                 cpu_threads=2)
+    # Verify locally, and exercise CUDA/cuDNN with a short inference when selected.
+    selected, notice = select_device(device)
+    if notice:
+        print(notice, flush=True)
+    try:
+        model = WhisperModel(str(model_dir), device=selected,
+                             compute_type="int8_float16" if selected == "cuda" else "int8",
+                             local_files_only=True, cpu_threads=2)
+        if selected == "cuda":
+            import numpy as np
+            segments, _ = model.transcribe(np.zeros(16000, dtype=np.float32),
+                                           language="en", beam_size=1, vad_filter=False)
+            list(segments)
+        print("Speech inference backend: " + ("NVIDIA CUDA" if selected == "cuda" else "CPU"), flush=True)
+    except (RuntimeError, OSError):
+        if selected != "cuda":
+            raise
+        print("CUDA validation failed; verifying the CPU fallback instead.", flush=True)
+        model = WhisperModel(str(model_dir), device="cpu", compute_type="int8",
+                             local_files_only=True, cpu_threads=2)
+    del model
+    gc.collect()
     sources = sorted(set(source_codes))
     groups = []
     previous = {}
@@ -194,8 +236,9 @@ def setup(root, source_codes, target, size, speech_only=False):
     print("Local translation models are ready.", flush=True)
 
 class Engine:
-    def __init__(self, root, size):
+    def __init__(self, root, size, device="cpu"):
         self.root = Path(root)
+        self.device, self.notice = select_device(device)
         self.size = size
         self.speech = None
         self.readers = OrderedDict()
@@ -204,6 +247,29 @@ class Engine:
         self.last_language = None
         self.last_speech = ""
         self.ready = json.loads((self.root / "ready.json").read_text("utf-8"))
+
+    def execute(self, action):
+        try:
+            result = action()
+        except (RuntimeError, OSError):
+            if self.device != "cuda":
+                raise
+            self.device = "cpu"
+            self.notice = "CUDA failed or ran out of memory; translation continued on CPU."
+            self.speech = None
+            self.readers.clear()
+            self.translators.clear()
+            gc.collect()
+            try:
+                import torch
+                torch.cuda.empty_cache()
+            except (ImportError, RuntimeError, OSError):
+                pass
+            result = action()
+        result["backend"] = "NVIDIA CUDA" if self.device == "cuda" else "CPU"
+        if self.notice:
+            result["notice"] = self.notice
+        return result
 
     def pair(self, source, target):
         key = source + "_" + target
@@ -220,7 +286,8 @@ class Engine:
         tokenizer = (sentencepiece.SentencePieceProcessor(model_file=str(folder / "sentencepiece.model"))
                      if (folder / "sentencepiece.model").is_file()
                      else BPETokenizer(folder / "bpe.model", source, target))
-        translator = ctranslate2.Translator(str(folder / "model"), device="cpu", compute_type="int8",
+        translator = ctranslate2.Translator(str(folder / "model"), device=self.device,
+                                           compute_type="int8_float16" if self.device == "cuda" else "int8",
                                            inter_threads=1, intra_threads=2)
         result = (tokenizer, translator, meta.get("target_prefix", ""))
         self.translators[key] = result
@@ -245,7 +312,7 @@ class Engine:
         tokens = tokenizer.encode(text[:3000], out_type=str)
         if prefix:
             tokens.insert(0, prefix)
-        translated = model.translate_batch([tokens], beam_size=2, max_decoding_length=512)[0].hypotheses[0]
+        translated = model.translate_batch([tokens], beam_size=4, max_decoding_length=512)[0].hypotheses[0]
         result = tokenizer.decode(translated).strip()
         self.cache[key] = result
         while len(self.cache) > 256:
@@ -253,12 +320,15 @@ class Engine:
         return result
 
     def audio(self, payload, source, target):
+        return self.execute(lambda: self._audio(payload, source, target))
+
+    def _audio(self, payload, source, target):
         from faster_whisper import WhisperModel
         import numpy as np
         import wave
         if self.speech is None:
-            self.speech = WhisperModel(str(self.root / "speech" / self.size), device="cpu",
-                compute_type="int8", cpu_threads=max(1, min(4, (os.cpu_count() or 2) // 2)),
+            self.speech = WhisperModel(str(self.root / "speech" / self.size), device=self.device,
+                compute_type="int8_float16" if self.device == "cuda" else "int8", cpu_threads=max(1, min(4, (os.cpu_count() or 2) // 2)),
                 num_workers=1, local_files_only=True)
         with wave.open(io.BytesIO(payload), "rb") as wav:
             if wav.getnchannels() != 2 or wav.getsampwidth() != 2 or wav.getframerate() != 44100:
@@ -269,7 +339,7 @@ class Engine:
         signal = np.interp(np.arange(0, len(signal), 44100 / 16000), np.arange(len(signal)), signal).astype(np.float32)
         segments, info = self.speech.transcribe(signal, language=None if source == "auto" else source,
             task="translate" if target == "en" else "transcribe",
-            beam_size=1, condition_on_previous_text=False, vad_filter=False,
+            beam_size=5 if self.device == "cuda" else 3, condition_on_previous_text=False, vad_filter=False,
             no_speech_threshold=0.65, temperature=0)
         text = " ".join(s.text.strip() for s in segments if s.no_speech_prob < 0.65).strip()
         detected = normalize(info.language)
@@ -287,6 +357,9 @@ class Engine:
         return {"text": " ".join(words), "source": detected, "target": target}
 
     def screen(self, payload, source, target):
+        return self.execute(lambda: self._screen(payload, source, target))
+
+    def _screen(self, payload, source, target):
         import easyocr
         import numpy as np
         from PIL import Image
@@ -304,7 +377,7 @@ class Engine:
             if group not in installed:
                 raise ValueError("Install the " + group + " screen-text model in Translation settings.")
             if group not in self.readers:
-                self.readers[group] = easyocr.Reader(OCR_GROUPS[group], gpu=False,
+                self.readers[group] = easyocr.Reader(OCR_GROUPS[group], gpu=self.device == "cuda",
                     model_storage_directory=str(self.root / "ocr"),
                     user_network_directory=str(self.root / "ocr-user"),
                     download_enabled=False, verbose=False)
@@ -331,9 +404,9 @@ class Engine:
         translated = self.translate(text, detected, target)
         return {"text": translated, "source": detected, "target": target}
 
-def run(root, size):
+def run(root, size, device="auto"):
     block_network()
-    engine = Engine(root, size)
+    engine = Engine(root, size, device)
     # Stdout is only the protocol. Third-party diagnostic output goes to stderr.
     protocol = sys.stdout
     sys.stdout = sys.stderr
@@ -359,7 +432,8 @@ def run(root, size):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--models", required=True)
-    parser.add_argument("--size", choices=["tiny", "base", "small"], default="base")
+    parser.add_argument("--size", choices=["tiny", "base", "small", "medium"], default="base")
+    parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     parser.add_argument("--setup", action="store_true")
     parser.add_argument("--speech-only", action="store_true")
     parser.add_argument("--inputs", default="en,es,fr,de,pt,it")
@@ -368,6 +442,6 @@ if __name__ == "__main__":
     root = Path(args.models)
     if args.setup:
         setup(root, [x.strip() for x in args.inputs.split(",") if re.fullmatch(r"[a-z]{2,3}", x.strip())],
-              args.target, args.size, args.speech_only)
+              args.target, args.size, args.speech_only, args.device)
     else:
-        run(root, args.size)
+        run(root, args.size, args.device)

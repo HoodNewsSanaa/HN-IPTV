@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,6 +22,40 @@ class WorkerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 worker.safe_extract(archive, Path(temp) / "models")
             self.assertFalse((Path(temp) / "outside.txt").exists())
+
+    def test_cpu_selection_does_not_require_gpu_libraries(self):
+        self.assertEqual(worker.select_device("cpu"), ("cpu", None))
+
+    def test_unavailable_cuda_uses_cpu_with_explanation(self):
+        import types
+        fake_torch = types.SimpleNamespace(cuda=types.SimpleNamespace(is_available=lambda: False))
+        fake_ct2 = types.SimpleNamespace(get_cuda_device_count=lambda: 0)
+        with patch.dict(sys.modules, {"torch": fake_torch, "ctranslate2": fake_ct2}):
+            selected, notice = worker.select_device("cuda")
+        self.assertEqual(selected, "cpu")
+        self.assertIn("using CPU", notice)
+
+    def test_cuda_failure_retries_on_cpu_and_releases_gpu_models(self):
+        with tempfile.TemporaryDirectory() as temp:
+            Path(temp, "ready.json").write_text("{}")
+            engine = worker.Engine(temp, "tiny")
+            engine.device = "cuda"
+            engine.speech = object()
+            engine.readers["latin"] = object()
+            engine.translators["es_en"] = object()
+            calls = []
+            def infer():
+                calls.append(engine.device)
+                if engine.device == "cuda":
+                    raise RuntimeError("CUDA out of memory")
+                return {"text": "hello"}
+            result = engine.execute(infer)
+            self.assertEqual(calls, ["cuda", "cpu"])
+            self.assertEqual(result["backend"], "CPU")
+            self.assertIsNone(engine.speech)
+            self.assertFalse(engine.readers)
+            self.assertFalse(engine.translators)
+            self.assertIn("continued on CPU", result["notice"])
 
     def test_cached_bpe_and_sentencepiece_packages_are_recognized(self):
         with tempfile.TemporaryDirectory() as temp:

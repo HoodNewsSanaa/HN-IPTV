@@ -46,20 +46,43 @@ internal static class LocalTranslationRuntime
             string site = Path.Combine(Path.GetDirectoryName(Python)!, "Lib", "site-packages");
             Directory.CreateDirectory(site); ZipFile.ExtractToDirectory(archive, site, true); File.Delete(archive);
         }
+        bool gpu = settings.Acceleration == "cuda" || (settings.Acceleration == "auto" && await HasNvidiaGpuAsync(ct));
+        string gpuReady = Path.Combine(Root, "cuda-12.8.ready");
         string ready = Path.Combine(Root, "dependencies-v2.ready");
-        if (!File.Exists(ready))
+        if (!File.Exists(ready) || (gpu && !File.Exists(gpuReady)))
         {
-            progress("Installing CPU translation and recognition libraries. This may take several minutes...");
+            progress(gpu ? "Preparing NVIDIA CUDA 12.8 libraries. This optional download can require several GB..." : "Installing CPU translation and recognition libraries. This may take several minutes...");
             await RunAsync(["-m", "pip", "install", "--disable-pip-version-check", "--no-warn-script-location", "setuptools==80.9.0", "wheel==0.45.1"], progress, ct);
-            await RunAsync(["-m", "pip", "install", "--disable-pip-version-check", "--no-warn-script-location", "--index-url", "https://download.pytorch.org/whl/cpu",
-                "torch==2.8.0", "torchvision==0.23.0"], progress, ct);
+            await RunAsync(["-m", "pip", "install", "--disable-pip-version-check", "--no-warn-script-location", "--index-url", gpu ? "https://download.pytorch.org/whl/cu128" : "https://download.pytorch.org/whl/cpu",
+                gpu ? "torch==2.8.0+cu128" : "torch==2.8.0", gpu ? "torchvision==0.23.0+cu128" : "torchvision==0.23.0"], progress, ct);
             await RunAsync(["-m", "pip", "install", "--disable-pip-version-check", "--no-warn-script-location", "-r",
                 Path.Combine(AppContext.BaseDirectory, "TranslationRuntime", "requirements.txt")], progress, ct);
-            await File.WriteAllTextAsync(ready, "1", ct);
+            await File.WriteAllTextAsync(ready, "2", ct);
+            if (gpu) await File.WriteAllTextAsync(gpuReady, "12.8", ct);
         }
         progress("Downloading requested language models. Existing models stay cached...");
         await RunAsync([Worker, "--setup", "--models", Models, "--size", settings.SpeechModel,
-            "--inputs", string.Join(",", settings.InstalledInputs), "--target", settings.Target], progress, ct);
+            "--inputs", string.Join(",", settings.InstalledInputs), "--target", settings.Target, "--device", settings.Acceleration], progress, ct);
+    }
+    private static async Task<bool> HasNvidiaGpuAsync(CancellationToken ct)
+    {
+        try {
+            var info = new ProcessStartInfo("nvidia-smi.exe") { UseShellExecute = false, CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden, RedirectStandardOutput = true, RedirectStandardError = true };
+            info.ArgumentList.Add("--query-gpu=name"); info.ArgumentList.Add("--format=csv,noheader");
+            using var process = Process.Start(info);
+            if (process == null) return false;
+            try {
+                var output = process.StandardOutput.ReadToEndAsync(ct);
+                var errors = process.StandardError.ReadToEndAsync(ct);
+                await process.WaitForExitAsync(ct).WaitAsync(TimeSpan.FromSeconds(5), ct);
+                await errors;
+                return process.ExitCode == 0 && !string.IsNullOrWhiteSpace(await output);
+            }
+            catch { try { if (!process.HasExited) process.Kill(true); } catch { } throw; }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch { return false; }
     }
     private static async Task DownloadAsync(string url, string path, CancellationToken ct)
     {
@@ -118,7 +141,7 @@ internal sealed class LocalTranslationWorker : IAsyncDisposable
     internal LocalTranslationWorker(TranslationSettings settings)
     {
         var info = LocalTranslationRuntime.StartInfo([LocalTranslationRuntime.Worker, "--models", LocalTranslationRuntime.Models,
-            "--size", settings.SpeechModel]);
+            "--size", settings.SpeechModel, "--device", settings.Acceleration]);
         info.Environment["HF_HUB_OFFLINE"] = "1";
         info.Environment["TRANSFORMERS_OFFLINE"] = "1";
         _process = Process.Start(info) ?? throw new IOException("Could not start local translation.");
@@ -142,7 +165,9 @@ internal sealed class LocalTranslationWorker : IAsyncDisposable
             if (root.GetProperty("id").GetInt64() != id) throw new IOException("Translation response was out of sequence.");
             string? error = root.TryGetProperty("error", out var value) ? value.GetString() : null;
             return new TranslationResult(root.GetProperty("text").GetString() ?? "", root.GetProperty("source").GetString() ?? "",
-                root.GetProperty("target").GetString() ?? "", error);
+                root.GetProperty("target").GetString() ?? "", error,
+                root.TryGetProperty("backend", out var backend) ? backend.GetString() ?? "" : "",
+                root.TryGetProperty("notice", out var notice) ? notice.GetString() : null);
         }
         finally { _gate.Release(); }
     }

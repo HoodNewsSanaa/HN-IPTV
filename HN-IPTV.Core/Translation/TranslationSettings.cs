@@ -8,6 +8,7 @@ public sealed record TranslationSettings
     public string InputLanguage { get; init; } = "auto";
     public string OutputLanguage { get; init; } = "auto";
     public string SpeechModel { get; init; } = "base";
+    public string Acceleration { get; init; } = "auto";
     public string[] InstalledInputs { get; init; } = ["en", "es", "fr", "de", "pt", "it"];
     public string Target => OutputLanguage == "auto" ? NormalizeLanguage(CultureInfo.CurrentUICulture.TwoLetterISOLanguageName) : NormalizeLanguage(OutputLanguage);
     public static string NormalizeLanguage(string? value)
@@ -17,7 +18,8 @@ public sealed record TranslationSettings
     }
     public TranslationSettings Normalize() => this with {
         InputLanguage = NormalizeLanguage(InputLanguage), OutputLanguage = NormalizeLanguage(OutputLanguage),
-        SpeechModel = SpeechModel is "tiny" or "base" or "small" ? SpeechModel : "base",
+        SpeechModel = SpeechModel is "tiny" or "base" or "small" or "medium" ? SpeechModel : "base",
+        Acceleration = Acceleration is "auto" or "cpu" or "cuda" ? Acceleration : "auto",
         InstalledInputs = (InstalledInputs ?? []).Select(NormalizeLanguage).Where(x => x != "auto").Distinct().Take(30).ToArray()
     };
     public static TranslationSettings Load(string path) => File.Exists(path)
@@ -25,7 +27,7 @@ public sealed record TranslationSettings
     public void Save(string path) => AtomicFile.Write(path, stream => JsonSerializer.Serialize(stream, Normalize()));
 }
 
-public sealed record TranslationResult(string Text, string Source, string Target, string? Error = null);
+public sealed record TranslationResult(string Text, string Source, string Target, string? Error = null, string Backend = "", string? Notice = null);
 
 // Clear all old results at each tune, Stop, settings change, or toggle.
 public sealed class TranslationGeneration

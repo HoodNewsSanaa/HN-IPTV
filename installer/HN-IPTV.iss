@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.11.2"
+  #define AppVersion "0.11.3"
 #endif
 #ifndef PlaybackEngine
   #define PlaybackEngine "mpv"

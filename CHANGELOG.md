@@ -1,3 +1,11 @@
+# 0.11.3 Feature Rich preview
+
+- Add Auto / NVIDIA CUDA / CPU translation acceleration with private optional CUDA 12.8 libraries.
+- Accelerate speech, screen recognition and text translation; fall back to CPU on GPU failure or insufficient memory.
+- Add the medium multilingual speech model and improve speech/text beam search quality.
+- Show the active inference backend and CPU fallback in the app status.
+- Include the BPE Spanish-to-English language pack setup fix from 0.11.2.
+
 # 0.11.2 Feature Rich preview
 
 - Fix setup and local translation for Spanish-to-English and other BPE language packs.

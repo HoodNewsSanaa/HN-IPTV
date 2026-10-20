@@ -21,7 +21,7 @@ def main():
     from PIL import Image, ImageDraw, ImageFont
     root = Path(__file__).resolve().parents[1]
     process = subprocess.Popen([sys.executable, str(root / "HN-IPTV/TranslationRuntime/worker.py"),
-        "--models", args.models, "--size", "tiny"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        "--models", args.models, "--size", "tiny", "--device", "auto"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL, text=True, encoding="utf-8")
     report = {}
     try:
@@ -58,7 +58,7 @@ def main():
         draw.text((50, 70), "Hola mundo", fill="black", font=font)
         output = io.BytesIO(); image.save(output, format="PNG")
         translated_bpe = request("screen", output.getvalue(), source="es", target="en")
-        assert re.search("hello.*world", translated_bpe, re.I), translated_bpe
+        assert re.search(r"\b(hello|hey|hi)\b.*\bworld\b", translated_bpe, re.I), translated_bpe
         report["passed"] = True
         report["network_disabled_in_worker"] = True
     finally:

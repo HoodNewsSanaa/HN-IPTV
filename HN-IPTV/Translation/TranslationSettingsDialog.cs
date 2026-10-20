@@ -7,7 +7,7 @@ namespace HnIptv;
 internal sealed class TranslationSettingsDialog : Window
 {
     private readonly ComboBox _input = new() { IsEditable = true }, _output = new() { IsEditable = true };
-    private readonly ComboBox _model = new();
+    private readonly ComboBox _model = new(), _acceleration = new();
     private readonly TextBox _packs = new();
     private readonly TextBox _log = new() { IsReadOnly = true, TextWrapping = TextWrapping.Wrap,
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Height = 130 };
@@ -17,17 +17,19 @@ internal sealed class TranslationSettingsDialog : Window
     internal TranslationSettings Settings => new TranslationSettings {
         InputLanguage = _input.Text, OutputLanguage = _output.Text,
         SpeechModel = _model.SelectedItem as string ?? "base",
+        Acceleration = _acceleration.SelectedItem as string ?? "auto",
         InstalledInputs = _packs.Text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
     }.Normalize();
     internal TranslationSettingsDialog(TranslationSettings settings)
     {
-        Title = "HN-IPTV — Local translation"; Width = 600; Height = 600;
+        Title = "HN-IPTV — Local translation"; Width = 620; Height = 700;
         ResizeMode = ResizeMode.CanResize; MinWidth = 500; MinHeight = 500; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var panel = new StackPanel { Margin = new Thickness(20) };
         var choices = new[] { "auto", "en", "es", "fr", "de", "pt", "it", "ja", "ko", "zh", "zt", "ru", "uk", "ar", "hi", "tr", "nl", "pl" };
         _input.ItemsSource = choices; _output.ItemsSource = choices;
         _input.Text = settings.InputLanguage; _output.Text = settings.OutputLanguage;
-        _model.ItemsSource = new[] { "tiny", "base", "small" }; _model.SelectedItem = settings.SpeechModel;
+        _model.ItemsSource = new[] { "tiny", "base", "small", "medium" }; _model.SelectedItem = settings.SpeechModel;
+        _acceleration.ItemsSource = new[] { "auto", "cuda", "cpu" }; _acceleration.SelectedItem = settings.Acceleration;
         _packs.Text = string.Join(", ", settings.InstalledInputs);
         void Field(string label, Control control) {
             panel.Children.Add(new TextBlock { Text = label, Margin = new Thickness(0, 8, 0, 4) });
@@ -37,7 +39,9 @@ internal sealed class TranslationSettingsDialog : Window
             TextWrapping = TextWrapping.Wrap });
         Field("Input language — Auto detects speech/text; or enter a language code", _input);
         Field("Output language — Auto uses your Windows display language", _output);
-        Field("Speech model — tiny is faster, small uses more resources", _model);
+        Field("Speech model — small balances quality/speed; medium improves accuracy with more memory", _model);
+        Field("Hardware acceleration — auto uses NVIDIA CUDA when prepared; cpu avoids GPU downloads", _acceleration);
+        panel.Children.Add(new TextBlock { Text = "For an RTX 4050, start with small; try medium for better recognition. CUDA setup downloads additional libraries (several GB). GPU failures fall back to CPU.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0) });
         Field("Input language packs to install (comma-separated codes)", _packs);
         panel.Children.Add(new TextBlock { Text = "Prepare packs for the languages you watch. Auto screen detection uses installed packs. Extra runtime and models can require several GB; they stay cached across updates.",
             TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });

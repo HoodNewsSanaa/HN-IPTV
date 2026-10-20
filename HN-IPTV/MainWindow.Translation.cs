@@ -9,6 +9,7 @@ public partial class MainWindow
     private TranslationSettings _translationSettings = new();
     private TranslationOverlay? _translationOverlay;
     private bool _translateSpeech, _translateScreen;
+    private string _translationBackend = "";
     private CancellationTokenSource? _translationSession;
     private readonly TranslationGeneration _translationGeneration = new();
     private readonly SemaphoreSlim _translationGate = new(1, 1);
@@ -80,6 +81,7 @@ public partial class MainWindow
     }
     private async Task RestartTranslationAsync()
     {
+        _translationBackend = "";
         long generation = _translationGeneration.Advance();
         CancelAndClear(ref _translationSession);
         await _translationGate.WaitAsync();
@@ -177,6 +179,11 @@ public partial class MainWindow
             SetStatus(result.Error);
             if (speech) _translationOverlay?.SetSpeech(""); else _translationOverlay?.SetScreen("");
             return;
+        }
+        string backend = result.Backend + result.Notice;
+        if (!string.IsNullOrEmpty(result.Backend) && backend != _translationBackend) {
+            _translationBackend = backend;
+            SetStatus("Local translation: " + result.Backend + (result.Notice == null ? "." : ". " + result.Notice));
         }
         if (speech) _translationOverlay?.SetSpeech(result.Text); else _translationOverlay?.SetScreen(result.Text);
     }
