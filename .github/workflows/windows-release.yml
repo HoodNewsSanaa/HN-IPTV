@@ -113,6 +113,7 @@ jobs:
         shell: pwsh
         env:
           SOURCE_BRANCH: ${{ github.head_ref || github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if ($env:SOURCE_BRANCH -eq 'HN-IPTV-Feature-Rich') { ./prepare-base-upgrade.ps1 }
           else { ./build-upgrade-fixture.ps1 }

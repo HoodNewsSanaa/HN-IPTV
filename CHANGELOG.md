@@ -1,3 +1,13 @@
+# 0.11.0 — Feature Rich preview
+
+- Restore fullscreen controls and keyboard exit after switching applications; preserve normal Alt-Tab behavior.
+- Add independently toggleable local speech and screen-text translation with automatic/manual input and output languages.
+- Cache optional private runtime, speech, OCR and translation models in the existing data folder.
+- Keep model preparation separate from inference; translation workers have Python networking disabled and process only this app's audio/video.
+- Preserve stable installer identity and test upgrading the actual 0.10.0 installer with cached model/settings sentinels.
+
+See FEATURE-RICH.md for setup, language coverage and experimental limitations.
+
 # 0.10.0
 
 - Check GitHub Releases shortly after startup and offer an in-app update action. Download the matching installer or portable package, verify its SHA-256 checksum, save settings before closing, and preserve user data. Portable updates back up replaced files and roll back on copy failure.

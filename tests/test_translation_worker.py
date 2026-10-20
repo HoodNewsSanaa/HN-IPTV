@@ -32,6 +32,21 @@ class WorkerTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Network access is disabled", result.stderr)
 
+    def test_model_download_retries_the_publishers_public_mirror(self):
+        original = worker.download
+        tried = []
+        def simulated(url, path):
+            tried.append(url)
+            if "argos-net.com" in url:
+                raise OSError("host unavailable")
+        worker.download = simulated
+        try:
+            worker.download_package({"links": ["https://argos-net.com/v1/translate-en_es-1_0.argosmodel"]}, "unused")
+        finally:
+            worker.download = original
+        self.assertEqual(len(tried), 2)
+        self.assertTrue(tried[1].startswith("https://data.argosopentech.com/argospm/v1/"))
+
     def test_language_scripts_are_grouped_without_mixing_incompatible_readers(self):
         self.assertEqual(worker.ocr_group("es"), "latin")
         self.assertEqual(worker.ocr_group("ja"), "ja")

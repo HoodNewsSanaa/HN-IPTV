@@ -1,6 +1,8 @@
 $ErrorActionPreference = 'Stop'
 $version = '0.10.0'
-$release = Invoke-RestMethod -Uri "https://api.github.com/repos/HoodNewsSanaa/HN-IPTV/releases/tags/v$version" -Headers @{ 'User-Agent' = 'HN-IPTV-upgrade-validation' }
+$headers = @{ 'User-Agent' = 'HN-IPTV-upgrade-validation' }
+if ($env:GH_TOKEN) { $headers['Authorization'] = 'Bearer ' + $env:GH_TOKEN }
+$release = Invoke-RestMethod -Uri "https://api.github.com/repos/HoodNewsSanaa/HN-IPTV/releases/tags/v$version" -Headers $headers
 $asset = $release.assets | Where-Object name -eq 'HN-IPTV-Setup.exe' | Select-Object -First 1
 $match = [regex]::Match($release.body, '(?im)^([a-f0-9]{64})[ \t]+HN-IPTV-Setup\.exe\r?$')
 if (-not $asset -or -not $match.Success) { throw 'Stable installer or checksum is missing.' }

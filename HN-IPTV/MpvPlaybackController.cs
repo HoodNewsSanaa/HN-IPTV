@@ -238,9 +238,10 @@ internal sealed class PlaybackController
                 var bitmap = System.Windows.Media.Imaging.BitmapSource.Create(width, height, 96, 96,
                     System.Windows.Media.PixelFormats.Bgra32, null, data, stride);
                 bitmap.Freeze();
-                if (width > 1280) {
+                double scale = Math.Min(1, Math.Min(1280d / width, 720d / height));
+                if (scale < 1) {
                     var scaled = new System.Windows.Media.Imaging.TransformedBitmap(bitmap,
-                        new System.Windows.Media.ScaleTransform(1280d / width, 1280d / width));
+                        new System.Windows.Media.ScaleTransform(scale, scale));
                     scaled.Freeze(); bitmap = scaled;
                 }
                 using var output = new System.IO.MemoryStream();

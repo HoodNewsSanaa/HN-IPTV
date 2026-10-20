@@ -176,7 +176,7 @@ public partial class MainWindow
     {
         _translationGeneration.Advance();
         CancelAndClear(ref _translationSession);
-        _translationOverlay?.Clear();
+        _translationOverlay?.Close(); _translationOverlay = null;
         await _translationGate.WaitAsync();
         try { await StopTranslationResourcesAsync(); }
         finally { _translationGate.Release(); }

@@ -15,7 +15,7 @@ import zipfile
 from collections import OrderedDict
 
 OCR_GROUPS = {
-    "latin": ["en", "es", "fr", "de", "pt", "it"],
+    "latin": ["en", "es", "fr", "de", "pt", "it", "tr", "pl", "nl", "vi", "id", "cs"],
     "ja": ["ja", "en"], "ko": ["ko", "en"],
     "zh": ["ch_sim", "en"], "zt": ["ch_tra", "en"],
     "cyrillic": ["ru", "uk", "en"], "arabic": ["ar", "fa", "ur", "en"],
@@ -55,14 +55,14 @@ def block_network():
     socket.getaddrinfo = denied
 
 def download(url, path):
-    from urllib.request import urlopen
+    from urllib.request import urlopen, Request
     if not url.startswith("https://"):
         raise ValueError("Models must use HTTPS")
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".partial")
     try:
-        with urlopen(url, timeout=60) as response, temporary.open("wb") as out:
+        with urlopen(Request(url, headers={"User-Agent": "HN-IPTV-Feature-Rich/0.11"}), timeout=60) as response, temporary.open("wb") as out:
             if response.geturl().split(":")[0] != "https":
                 raise ValueError("Insecure model redirect")
             count = 0
@@ -77,6 +77,24 @@ def download(url, path):
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def download_package(package, path):
+    from urllib.parse import urlparse
+    urls = [x for x in package["links"] if x.startswith("https://")]
+    # The publisher's original public model host mirrors the same versioned files.
+    for url in list(urls):
+        parsed = urlparse(url)
+        if parsed.hostname == "argos-net.com":
+            urls.append("https://data.argosopentech.com/argospm/v1/" + parsed.path.rsplit("/", 1)[-1])
+    errors = []
+    for url in dict.fromkeys(urls):
+        try:
+            download(url, path)
+            return
+        except Exception as error:
+            errors.append(type(error).__name__ + ": " + str(error))
+    raise ValueError("Language-pack download failed: " + "; ".join(errors))
 
 def setup(root, source_codes, target, size, speech_only=False):
     from faster_whisper import WhisperModel
@@ -133,7 +151,7 @@ def setup(root, source_codes, target, size, speech_only=False):
                 raise ValueError("No secure download for requested language pack")
             archive = root / "downloads" / (source + "_" + dest + ".argosmodel")
             print("Preparing translation pack: " + source + " to " + dest, flush=True)
-            download(url, archive)
+            download_package(package, archive)
             safe_extract(archive, pair_dir)
             archive.unlink()
             if not list(pair_dir.rglob("sentencepiece.model")):

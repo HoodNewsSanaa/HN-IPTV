@@ -20,7 +20,8 @@ internal static class LocalTranslationRuntime
     internal static async Task InstallAsync(TranslationSettings settings, Action<string> progress, CancellationToken ct)
     {
         Directory.CreateDirectory(Root);
-        if (!File.Exists(Python))
+        string bootstrapMarker = Path.Combine(Root, "python-3.12.10.ready");
+        if (!File.Exists(Python) || !File.Exists(bootstrapMarker))
         {
             progress("Downloading the private Python runtime...");
             string archive = Path.Combine(Root, "python.zip");
@@ -30,6 +31,7 @@ internal static class LocalTranslationRuntime
             File.Delete(archive);
             File.WriteAllText(Path.Combine(Path.GetDirectoryName(Python)!, "python312._pth"),
                 "python312.zip\n.\nLib/site-packages\nimport site\n");
+            await File.WriteAllTextAsync(bootstrapMarker, PythonHash, ct);
         }
         if (!File.Exists(Path.Combine(Path.GetDirectoryName(Python)!, "Lib", "site-packages", "pip", "__main__.py")))
         {
