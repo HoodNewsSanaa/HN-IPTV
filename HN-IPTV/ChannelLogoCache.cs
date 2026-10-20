@@ -21,6 +21,7 @@ internal sealed class ChannelLogoCache : IDisposable
     public async Task<BitmapSource?> GetAsync(string url, TimeSpan maxAge, CancellationToken ct)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http")) return null;
+        url = uri.AbsoluteUri;
         lock (_sync)
             if (_memory.TryGetValue(url, out var hit) && hit.Expires > DateTimeOffset.UtcNow) return hit.Image;
         if (_pending.Count >= 128 && !_pending.ContainsKey(url)) return null;
@@ -39,6 +40,9 @@ internal sealed class ChannelLogoCache : IDisposable
     }
     public Task<BitmapSource?> GetCachedAsync(string url, CancellationToken ct)
     {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http"))
+            return Task.FromResult<BitmapSource?>(null);
+        url = uri.AbsoluteUri;
         lock (_sync) if (_memory.TryGetValue(url, out var hit) && hit.Image != null) return Task.FromResult<BitmapSource?>(hit.Image);
         return Task.Run<BitmapSource?>(() =>
         {

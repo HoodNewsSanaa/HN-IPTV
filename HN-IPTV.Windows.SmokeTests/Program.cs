@@ -182,6 +182,17 @@ internal static class Program
                     var current = await logos.GetAsync(server.Url + "fast-logo.png", TimeSpan.FromHours(1), default).WaitAsync(TimeSpan.FromSeconds(2));
                     if (current == null) throw new InvalidOperationException("Current category logo did not load after cancellation.");
                     results["logo_after_cancel_ms"] = logoClock.Elapsed.TotalMilliseconds;
+                    int fetched = server.RequestCount("fast-logo.png");
+                    var same = await logos.GetAsync(server.Url.Replace("http:", "HTTP:") + "fast-logo.png", TimeSpan.FromHours(1), default);
+                    if (!ReferenceEquals(same, current) || server.RequestCount("fast-logo.png") != fetched)
+                        throw new InvalidOperationException("Equivalent logo URLs bypassed the memory cache.");
+                    using var reopened = new ChannelLogoCache(Path.Combine(root, "logo-test"));
+                    foreach (var file in Directory.GetFiles(Path.Combine(root, "logo-test"), "*.image"))
+                        File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddDays(-2));
+                    var stale = await reopened.GetCachedAsync(server.Url + "fast-logo.png", default);
+                    if (stale == null || server.RequestCount("fast-logo.png") != fetched)
+                        throw new InvalidOperationException("Disk-cached logo was not available without a network reload.");
+                    results["logo_memory_and_stale_disk_cache"] = true;
                 }
                 var tuneTimes = new List<double>();
                 for (int i = 0; i < 6; i++)
@@ -400,6 +411,10 @@ internal sealed class FixtureServer : IDisposable
     private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
     private readonly CancellationTokenSource _stop = new();
     public string Url { get; }
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> _counts = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _headers = new();
+    public int RequestCount(string name) => _counts.GetValueOrDefault(name);
+    public string RequestHeaders(string name) => _headers.GetValueOrDefault(name) ?? "";
     public FixtureServer(string directory)
     {
         _listener.Start();
@@ -425,9 +440,12 @@ internal sealed class FixtureServer : IDisposable
             {
                 using var reader = new StreamReader(client.GetStream(), Encoding.ASCII, leaveOpen: true);
                 string? request = await reader.ReadLineAsync(_stop.Token);
-                while (await reader.ReadLineAsync(_stop.Token) is { Length: > 0 }) { }
+                var requestHeaders = new StringBuilder();
+                while (await reader.ReadLineAsync(_stop.Token) is { Length: > 0 } line) requestHeaders.AppendLine(line);
                 string name = request?.Split(' ').ElementAtOrDefault(1)?.TrimStart('/') ?? "";
                 if (name != Path.GetFileName(name)) return;
+                _counts.AddOrUpdate(name, 1, (_, count) => count + 1);
+                _headers[name] = requestHeaders.ToString();
                 bool logo = name == "fast-logo.png" || name.StartsWith("slow-logo-", StringComparison.Ordinal);
                 if (name.StartsWith("slow-logo-", StringComparison.Ordinal)) await Task.Delay(5000, _stop.Token);
                 if (!logo && !File.Exists(Path.Combine(directory, name))) return;
