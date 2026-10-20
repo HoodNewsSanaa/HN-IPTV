@@ -164,14 +164,14 @@ jobs:
           # Publish complete notes/checksums atomically with the release so
           # startup checks never see a package without its verification digest.
           awk 'NR == 1 { next } /^# / { exit } { print }' CHANGELOG.md > release-notes.txt
-          printf '\\nInstall the new setup over the existing version to preserve saved data.\\n' >> release-notes.txt
-          printf '\\nSHA-256 checksums:\\n```text\\n' >> release-notes.txt
+          printf '\nInstall the new setup over the existing version to preserve saved data.\n' >> release-notes.txt
+          printf '\nSHA-256 checksums:\n```text\n' >> release-notes.txt
           cat dist/SHA256SUMS.txt >> release-notes.txt
-          printf '```\\n' >> release-notes.txt
+          printf '```\n' >> release-notes.txt
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             tag_commit=$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq '.sha')
             if [ "$tag_commit" != "$SOURCE_COMMIT" ]; then
-              printf 'Release tag points to another commit. Use a new version.\\n' >&2
+              printf 'Release tag points to another commit. Use a new version.\n' >&2
               exit 1
             fi
             gh release upload "$RELEASE_TAG" dist/HN-IPTV-Setup.exe dist/HN-IPTV-Portable.zip dist/SHA256SUMS.txt --clobber
