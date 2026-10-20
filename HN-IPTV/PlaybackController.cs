@@ -33,7 +33,7 @@ internal sealed class PlaybackController
         finally { _gate.Release(); }
     }
 
-    public Task PlayAsync(Uri uri, IntPtr hwnd, int volume, CancellationToken ct, int bufferMilliseconds = 1200) => RunAsync("vlc.tune", () =>
+    public Task PlayAsync(Uri uri, IntPtr hwnd, int volume, CancellationToken ct, int bufferMilliseconds = 1200, string userAgent = "", string referer = "") => RunAsync("vlc.tune", () =>
     {
         if (hwnd == IntPtr.Zero) throw new InvalidOperationException("Video surface is not ready.");
         if (_player == null)
@@ -48,7 +48,11 @@ internal sealed class PlaybackController
         _media?.Dispose(); _media = null;
         ct.ThrowIfCancellationRequested();
         _lastRateTimestamp = 0; _lastReadBytes = 0; _inputRate = null;
+        if (userAgent.Contains('\r') || userAgent.Contains('\n') || referer.Contains('\r') || referer.Contains('\n'))
+            throw new System.IO.InvalidDataException("Invalid stream headers.");
         _media = new Media(_vlc!, uri);
+        if (userAgent.Length > 0) _media.AddOption(":http-user-agent=" + userAgent);
+        if (referer.Length > 0) _media.AddOption(":http-referrer=" + referer);
         int buffer = Math.Clamp(bufferMilliseconds, 250, 10000);
         _media.AddOption($":network-caching={buffer}");
         _media.AddOption($":live-caching={buffer}");

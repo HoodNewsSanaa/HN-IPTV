@@ -21,6 +21,7 @@ internal sealed class ChannelLogoCache : IDisposable
     public async Task<BitmapSource?> GetAsync(string url, TimeSpan maxAge, CancellationToken ct)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http")) return null;
+        url = uri.AbsoluteUri;
         lock (_sync)
             if (_memory.TryGetValue(url, out var hit) && hit.Expires > DateTimeOffset.UtcNow) return hit.Image;
         if (_pending.Count >= 128 && !_pending.ContainsKey(url)) return null;
@@ -37,6 +38,26 @@ internal sealed class ChannelLogoCache : IDisposable
             return await GetAsync(url, maxAge, ct).ConfigureAwait(false);
         }
     }
+    public Task<BitmapSource?> GetCachedAsync(string url, CancellationToken ct)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http"))
+            return Task.FromResult<BitmapSource?>(null);
+        url = uri.AbsoluteUri;
+        lock (_sync) if (_memory.TryGetValue(url, out var hit) && hit.Image != null) return Task.FromResult<BitmapSource?>(hit.Image);
+        return Task.Run<BitmapSource?>(() =>
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(url))).ToLowerInvariant();
+                var path = new[] { ".image", ".png", ".jpg", ".gif", ".bmp" }
+                    .Select(ext => Path.Combine(_directory, hash + ext)).FirstOrDefault(File.Exists);
+                return path == null ? null : Decode(File.ReadAllBytes(path));
+            }
+            catch (IOException) { return null; }
+            catch (Exception) when (!ct.IsCancellationRequested) { return null; }
+        }, ct);
+    }
     private async Task<BitmapSource?> LoadAsync(Uri uri, TimeSpan maxAge, CancellationToken generation)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(generation, _lifetime.Token);
@@ -51,11 +72,14 @@ internal sealed class ChannelLogoCache : IDisposable
             // Reuse Update 6 cache files, too.
             string? cached = new[] { ".image", ".png", ".jpg", ".gif", ".bmp" }
                 .Select(ext => Path.Combine(_directory, hash + ext)).FirstOrDefault(File.Exists);
-            if (cached != null && DateTime.UtcNow - File.GetLastWriteTimeUtc(cached) < maxAge)
-                image = Decode(File.ReadAllBytes(cached));
-            if (image == null)
+            if (cached != null) { try { image = Decode(File.ReadAllBytes(cached)); } catch (Exception) { } }
+            if (image == null || cached == null || DateTime.UtcNow - File.GetLastWriteTimeUtc(cached) >= maxAge)
             {
-                using var response = await _http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+                using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+                if (cached != null && image != null) request.Headers.IfModifiedSince = File.GetLastWriteTimeUtc(cached);
+                using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+                if (response.StatusCode == System.Net.HttpStatusCode.NotModified && cached != null && image != null)
+                { File.SetLastWriteTimeUtc(cached, DateTime.UtcNow); return Remember(uri.AbsoluteUri, image, maxAge); }
                 response.EnsureSuccessStatusCode();
                 if (response.Content.Headers.ContentLength is > 2_000_000) throw new InvalidDataException();
                 await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
@@ -80,10 +104,14 @@ internal sealed class ChannelLogoCache : IDisposable
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception) { /* Failed logos get a short negative cache, not continuous retries. */ }
         finally { _limit.Release(); }
+        return Remember(uri.AbsoluteUri, image, image == null ? TimeSpan.FromMinutes(5) : maxAge);
+    }
+    private BitmapSource? Remember(string url, BitmapSource? image, TimeSpan maxAge)
+    {
         lock (_sync)
         {
-            if (!_memory.ContainsKey(uri.AbsoluteUri)) _order.Enqueue(uri.AbsoluteUri);
-            _memory[uri.AbsoluteUri] = (image, DateTimeOffset.UtcNow + (image == null ? TimeSpan.FromMinutes(5) : maxAge));
+            if (!_memory.ContainsKey(url)) _order.Enqueue(url);
+            _memory[url] = (image, DateTimeOffset.UtcNow + (image == null ? TimeSpan.FromMinutes(5) : maxAge));
             while (_memory.Count > 128) _memory.Remove(_order.Dequeue());
         }
         return image;

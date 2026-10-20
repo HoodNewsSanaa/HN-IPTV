@@ -20,6 +20,8 @@ public sealed class PlaylistProfile
     public string Username { get; set; } = "";
     public string Password { get; set; } = "";
     public string LocalPath { get; set; } = "";
+    public string PlaylistUrl { get; set; } = "";
+    public string EpgSource { get; set; } = "";
     public string StreamFormat { get; set; } = "Automatic";
     public string SelectedGroupId { get; set; } = "*";
     public int ChannelRefreshHours { get; set; } = 6;
@@ -68,7 +70,7 @@ public sealed class PlaylistLibrary
     {
         Id = p.Id, Name = p.Name, Type = p.Type, ServerUrl = p.ServerUrl,
         Username = p.Username, Password = p.Password,
-        LocalPath = p.LocalPath, StreamFormat = p.StreamFormat, SelectedGroupId = p.SelectedGroupId,
+        LocalPath = p.LocalPath, PlaylistUrl = p.PlaylistUrl, EpgSource = p.EpgSource, StreamFormat = p.StreamFormat, SelectedGroupId = p.SelectedGroupId,
         ChannelRefreshHours = p.ChannelRefreshHours, EpgRefreshMinutes = p.EpgRefreshMinutes,
         LogoRefreshHours = p.LogoRefreshHours, LastChannelRefresh = p.LastChannelRefresh,
         LastEpgRefresh = p.LastEpgRefresh, LastLogoRefresh = p.LastLogoRefresh,

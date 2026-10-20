@@ -26,6 +26,7 @@ public static partial class M3uService
         string logo = "";
         string tvgId = "";
         int index = 1;
+        string userAgent = "", referer = "";
 
         // Stream lines instead of materializing one string object per channel/metadata row.
         while (reader.ReadLine() is { } raw)
@@ -43,7 +44,7 @@ public static partial class M3uService
                 }
                 title = comma >= 0 ? line[(comma + 1)..].Trim() : "Unnamed channel";
                 if (string.IsNullOrEmpty(title)) title = "Unnamed channel";
-                group = "Uncategorized"; logo = ""; tvgId = "";
+                group = "Uncategorized"; logo = ""; tvgId = ""; userAgent = ""; referer = "";
                 // Enumerate value matches over metadata only: no per-channel
                 // dictionary, Match/Group objects or allocations for unused tags.
                 var metadata = line.AsSpan(0, comma >= 0 ? comma : line.Length);
@@ -58,6 +59,10 @@ public static partial class M3uService
                     else if (name.Equals("tvg-id", StringComparison.OrdinalIgnoreCase)) tvgId = value.ToString();
                 }
             }
+            else if (title != null && line.StartsWith("#EXTVLCOPT:http-user-agent=", StringComparison.OrdinalIgnoreCase))
+                userAgent = line["#EXTVLCOPT:http-user-agent=".Length..].Trim();
+            else if (title != null && line.StartsWith("#EXTVLCOPT:http-referrer=", StringComparison.OrdinalIgnoreCase))
+                referer = line["#EXTVLCOPT:http-referrer=".Length..].Trim();
             else if (!line.StartsWith('#') && !string.IsNullOrWhiteSpace(line) && title != null)
             {
                 channels.Add(new Channel
@@ -65,7 +70,7 @@ public static partial class M3uService
                     Id = "m3u-" + ChannelPreferences.Hash(
                         (string.IsNullOrWhiteSpace(tvgId) ? line : tvgId) + "\n" + group + "\n" + title),
                     Name = title, Number = index++,
-                    GroupId = group, GroupName = group, Logo = logo, EpgId = tvgId, Command = line
+                    GroupId = group, GroupName = group, Logo = logo, EpgId = tvgId, Command = line, UserAgent = userAgent, Referer = referer
                 });
                 title = null;
             }
