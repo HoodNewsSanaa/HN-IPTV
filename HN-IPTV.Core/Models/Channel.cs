@@ -13,6 +13,8 @@ public sealed class Channel : INotifyPropertyChanged
     public string Logo { get; init; } = "";
     public string EpgId { get; init; } = "";
     public string Command { get; init; } = "";
+    public string UserAgent { get; init; } = "";
+    public string Referer { get; init; } = "";
 
     private string _logoImage = "";
     [System.Text.Json.Serialization.JsonIgnore]

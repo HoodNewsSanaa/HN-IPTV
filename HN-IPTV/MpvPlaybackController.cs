@@ -47,11 +47,15 @@ internal sealed class PlaybackController
         }
         catch { Native.mpv_terminate_destroy(_handle); _handle = IntPtr.Zero; throw; }
     }
-    public async Task PlayAsync(Uri uri, IntPtr hwnd, int volume, CancellationToken ct, int bufferMilliseconds = 1200)
+    public async Task PlayAsync(Uri uri, IntPtr hwnd, int volume, CancellationToken ct, int bufferMilliseconds = 1200, string userAgent = "", string referer = "")
     {
         await RunAsync(() =>
         {
+            if (userAgent.Contains('\r') || userAgent.Contains('\n') || referer.Contains('\r') || referer.Contains('\n'))
+                throw new System.IO.InvalidDataException("Invalid stream headers.");
             Initialize(hwnd);
+            Set("user-agent", userAgent.Length == 0 ? "HN-IPTV" : userAgent);
+            Set("referrer", referer);
             Set("volume", volume.ToString(System.Globalization.CultureInfo.InvariantCulture));
             var seconds = (Math.Clamp(bufferMilliseconds, 250, 10000) / 1000d).ToString(System.Globalization.CultureInfo.InvariantCulture);
             Set("cache-pause-wait", seconds);

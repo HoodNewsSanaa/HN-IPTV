@@ -33,6 +33,18 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, double> _groupOffsets = new();
     private PlayerSettings _playerSettings = new();
     private PictureInPictureWindow? _pip;
+    private FullscreenControls? _fullscreenControls;
+    private readonly RecoveryBudget _recovery = new();
+    private CancellationTokenSource? _recoveryCts;
+    private bool _recovering, _recoveryExhausted;
+    private long _lastProgress = -1;
+    private Stopwatch _progressAge = Stopwatch.StartNew();
+    private bool _userPaused, _muted;
+    private readonly System.Net.Http.HttpClient _updateHttp = new() { Timeout = TimeSpan.FromSeconds(20) };
+    private readonly CancellationTokenSource _updateCts = new();
+    private AppRelease? _availableRelease;
+    private string? _preparedUpdate;
+    private bool _checkingUpdate, _installingUpdate;
     private readonly DispatcherTimer _infoTimer = new(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
     private readonly DispatcherTimer _volumeDebounce = new() { Interval = TimeSpan.FromMilliseconds(50) };
     private bool _readingInfo, _changingCaptions;
@@ -99,8 +111,8 @@ public partial class MainWindow : Window
         _preferenceSaves = new(_preferences.SaveSnapshot);
         InitializeComponent();
         CaptionsButton.Visibility = BuildInfo.Engine == "mpv" ? Visibility.Visible : Visibility.Collapsed;
-        _playback.PlaybackError += () => Dispatcher.BeginInvoke(new Action(() =>
-        { if (!_closing) SetStatus("Playback failed. Check the stream and provider permissions."); }));
+        _playback.PlaybackError += () => Dispatcher.BeginInvoke(new Action(() => { if (!_closing) _ = RecoverPlaybackAsync(); }));
+        Loaded += async (_, _) => { try { await Task.Delay(1500, _updateCts.Token); if (!_closing) await CheckForUpdatesAsync(false); } catch (OperationCanceledException) { } };
         _groupSearchDebounce.Tick += (_, _) => { _groupSearchDebounce.Stop(); _groupView?.Refresh();
             if (GroupsList.SelectedItem == null) GroupsList.SelectedItem = _allGroups.FirstOrDefault(FilterGroup); };
         _searchDebounce.Tick += (_, _) => { _searchDebounce.Stop(); RefreshChannels(); };
@@ -258,7 +270,7 @@ public partial class MainWindow : Window
                 {
                     Id = channel.Id, Name = channel.Name, Number = channel.Number,
                     GroupId = channel.GroupId, GroupName = channel.GroupName, Logo = channel.Logo,
-                    EpgId = channel.EpgId, Command = channel.Command,
+                    EpgId = channel.EpgId, Command = channel.Command, UserAgent = channel.UserAgent, Referer = channel.Referer,
                     IsFavorite = preferences?.GetValueOrDefault(channel.Id)?.Favorite ?? channel.IsFavorite
                 });
             }
@@ -513,11 +525,15 @@ public partial class MainWindow : Window
         try
         {
             if (string.IsNullOrWhiteSpace(channel.Logo)) return;
+            var cachedImage = await _logos.GetCachedAsync(channel.Logo, token);
+            if (token.IsCancellationRequested || !row.IsLoaded || !ReferenceEquals(row.DataContext, channel)) return;
+            if (cachedImage != null && row.FindName("ChannelLogo") is Image cachedTarget)
+            { cachedTarget.Source = cachedImage; channel.LogoImage = "cached"; }
             var image = await _logos.GetAsync(channel.Logo,
                 TimeSpan.FromHours(Math.Clamp(_activePlaylist?.LogoRefreshHours ?? 24, 1, 168)), token);
             if (token.IsCancellationRequested || !row.IsLoaded || !ReferenceEquals(row.DataContext, channel)) return;
-            if (row.FindName("ChannelLogo") is Image target) target.Source = image;
-            channel.LogoImage = image == null ? "" : "cached";
+            if (image != null && row.FindName("ChannelLogo") is Image target) target.Source = image;
+            channel.LogoImage = image == null && cachedImage == null ? "" : "cached";
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { App.LogException("logo.load", ex); }
@@ -551,6 +567,8 @@ public partial class MainWindow : Window
     private Task<IReadOnlyList<ProgramEntry>> GetProgramsAsync(Channel channel, CancellationToken ct)
     {
         var requestKey = PlaylistProfile.EpgKey(channel.GroupId, channel.Id);
+        if (_source == SourceKind.M3u)
+            return Task.FromResult<IReadOnlyList<ProgramEntry>>(_activePlaylist?.CachedProviderPrograms.GetValueOrDefault(requestKey) ?? []);
         if (_epgRequests.TryGetValue(requestKey, out var existing) && !existing.IsCanceled && !existing.IsFaulted)
         {
             if (ReferenceEquals(_selectedChannel, channel)) _epgLimiter.Promote(requestKey);
@@ -672,6 +690,7 @@ public partial class MainWindow : Window
     private async void ChannelsList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_closing || _loadingCatalog) return;
+        if (ChannelsList.SelectedItem is Channel nextChannel && !ReferenceEquals(nextChannel, _playingChannel)) CancelRecovery();
         CancelAndClear(ref _epgCts);
         _programs.Clear();
         if (ChannelsList.SelectedItem is not Channel channel)
@@ -689,7 +708,7 @@ public partial class MainWindow : Window
         SelectedChannelCategory.Text = channel.GroupName + "  •  Channel " + channel.NumberLabel;
         FavoriteButton.Content = channel.IsFavorite ? "★  Favorited" : "☆  Favorite";
         if ((_source == SourceKind.Xtream && _xtream is null && HasNoCachedGuide(channel)) ||
-            (_source == SourceKind.M3u && HasNoCachedGuide(channel)))
+            (_source == SourceKind.M3u && string.IsNullOrWhiteSpace(_activePlaylist?.EpgSource) && HasNoCachedGuide(channel)))
         {
             EpgState.Text = "No EPG source configured";
             return;
@@ -716,7 +735,7 @@ public partial class MainWindow : Window
     private async void Play_Click(object sender, RoutedEventArgs e) => await TuneSelectedAsync(forceRetry: true);
 
     private Task PlaySelectedAsync() => TuneSelectedAsync(forceRetry: false);
-    private async Task TuneSelectedAsync(bool forceRetry)
+    private async Task TuneSelectedAsync(bool forceRetry, bool recovery = false)
     {
         if (_closing || _loadingCatalog || ChannelsList.SelectedItem is not Channel channel) return;
         if (!forceRetry && ReferenceEquals(channel, _playingChannel) && _tuneCts != null && !_tuneCts.IsCancellationRequested) return;
@@ -724,8 +743,11 @@ public partial class MainWindow : Window
         foreach (var key in _failedTunes.Where(x => x.Value <= DateTimeOffset.UtcNow).Select(x => x.Key).ToArray()) _failedTunes.Remove(key);
         if (!forceRetry && _failedTunes.ContainsKey(failureKey))
         { SetStatus("This channel failed recently. Press Play to retry now."); return; }
+        if (!recovery) { CancelRecovery(); _recovery.Reset(); _recoveryExhausted = false; }
+        _userPaused = false; _lastProgress = -1; _progressAge.Restart();
         CancelAndClear(ref _tuneCts);
-        var cts = new CancellationTokenSource();
+        var cts = recovery && _recoveryCts != null
+            ? CancellationTokenSource.CreateLinkedTokenSource(_recoveryCts.Token) : new CancellationTokenSource();
         _tuneCts = cts;
         try
         {
@@ -748,7 +770,7 @@ public partial class MainWindow : Window
 #if USE_MPV
             await _playback.CaptionsAsync(_playerSettings.CaptionsEnabled, cts.Token);
 #endif
-            await _playback.PlayAsync(uri, VideoView.VideoHandle, (int)VolumeSlider.Value, cts.Token, _playerSettings.BufferMilliseconds);
+            await _playback.PlayAsync(uri, VideoView.VideoHandle, (int)VolumeSlider.Value, cts.Token, _playerSettings.BufferMilliseconds, channel.UserAgent, channel.Referer);
             if (cts.IsCancellationRequested || _closing) return;
             _failedTunes.Remove(failureKey);
             _pip?.SetChannelTitle(channel.Name);
@@ -765,17 +787,18 @@ public partial class MainWindow : Window
                 if (_failedTunes.Count >= 128) _failedTunes.Remove(_failedTunes.Keys.First());
                 _failedTunes[failureKey] = DateTimeOffset.UtcNow.AddSeconds(15);
                 SetStatus("Unable to play " + channel.Name + ": " + ex.Message);
-                MessageBox.Show(this, ex.Message, "Playback error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                if (!recovery) _ = RecoverPlaybackAsync();
             }
         }
     }
 
     private async void Pause_Click(object sender, RoutedEventArgs e)
     {
-        try { await _playback.PauseAsync(); } catch (Exception ex) { App.LogException("playback.pause", ex); }
+        try { await _playback.PauseAsync(); _userPaused = !_userPaused; if (_userPaused) CancelRecovery(); _progressAge.Restart(); } catch (Exception ex) { App.LogException("playback.pause", ex); }
     }
     private async Task StopPlaybackAsync()
     {
+        CancelRecovery();
         _tuneGeneration++; _tuneSubmitted = false; _tuneWatch = null; _playingChannel = null;
         _infoTimer.Stop(); _streamInfo = StreamInfo.Empty; RenderStreamInfo();
         try { await _playback.StopAsync(); } catch (Exception ex) { App.LogException("playback.stop", ex); }
@@ -806,6 +829,7 @@ public partial class MainWindow : Window
     private void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (_closing) return;
+        _muted = false;
         _volumeDebounce.Stop(); _volumeDebounce.Start();
     }
 
@@ -866,13 +890,17 @@ public partial class MainWindow : Window
     private async Task UpdateStreamInfoAsync()
     {
         if (_readingInfo || _closing || !_tuneSubmitted || (_minimized && _pip == null)) return;
-        if (_tuneWatch == null && _pip == null && StreamInfoPanel.Visibility != Visibility.Visible) { _infoTimer.Stop(); return; }
+        if (_playingChannel == null) { _infoTimer.Stop(); return; }
         _readingInfo = true;
         var generation = _tuneGeneration;
         try {
             var info = await _playback.ReadInfoAsync();
             if (info == null || _closing || generation != _tuneGeneration) return;
             _streamInfo = info;
+            if (info.State == "Paused") _progressAge.Restart();
+            if (!_userPaused && info.PositionMilliseconds > 0 && info.PositionMilliseconds != _lastProgress)
+            { _lastProgress = info.PositionMilliseconds; _progressAge.Restart(); }
+            else if (!_userPaused && _progressAge.Elapsed > TimeSpan.FromSeconds(20)) _ = RecoverPlaybackAsync();
             _pip?.SetAspect(info.AspectRatio);
             if (StreamInfoPanel.Visibility == Visibility.Visible) RenderStreamInfo();
             if (_tuneWatch != null && info.Playing && info.PositionMilliseconds > 0) {
@@ -916,7 +944,7 @@ public partial class MainWindow : Window
         try
         {
             var pip = new PictureInPictureWindow(VideoView, _playerSettings, (int)VolumeSlider.Value,
-                async () => { try { await _playback.PauseAsync(); } catch (Exception ex) { App.LogException("pip.pause", ex); } },
+                () => Pause_Click(this, new RoutedEventArgs()),
                 async muted => { try { await _playback.VolumeAsync(muted ? 0 : (int)VolumeSlider.Value); } catch (Exception ex) { App.LogException("pip.mute", ex); } },
                 value => VolumeSlider.Value = value,
                 settings =>
@@ -950,7 +978,11 @@ public partial class MainWindow : Window
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Escape && _isFullScreen) { ToggleFullscreen(); e.Handled = true; }
+        if (e.Key != Key.Escape && (e.IsRepeat || Keyboard.Modifiers != ModifierKeys.None ||
+            Keyboard.FocusedElement is TextBoxBase || Keyboard.FocusedElement is PasswordBox)) return;
+        if (e.Key == Key.Space) { Pause_Click(this, new RoutedEventArgs()); e.Handled = true; }
+        else if (e.Key == Key.M) { ToggleMute(); e.Handled = true; }
+        else if (e.Key == Key.Escape && _isFullScreen) { ToggleFullscreen(); e.Handled = true; }
         else if (e.Key == Key.P && !e.IsRepeat && Keyboard.Modifiers == ModifierKeys.None && Keyboard.FocusedElement is not TextBoxBase && Keyboard.FocusedElement is not PasswordBox)
         { TogglePictureInPicture(); e.Handled = true; }
         else if (e.Key == Key.C && !e.IsRepeat && Keyboard.Modifiers == ModifierKeys.None && Keyboard.FocusedElement is not TextBoxBase && Keyboard.FocusedElement is not PasswordBox)
@@ -1008,9 +1040,14 @@ public partial class MainWindow : Window
             PlayerGuideRow.Height = new GridLength(0);
             PlayerControlsRow.Height = new GridLength(0);
             Activate();
+            _fullscreenControls = new FullscreenControls(this,
+                () => _ = TuneSelectedAsync(true), () => Pause_Click(this, new RoutedEventArgs()),
+                () => Stop_Click(this, new RoutedEventArgs()), ToggleMute, () => _ = ToggleCaptionsAsync(),
+                ToggleFullscreen, value => VolumeSlider.Value = value, (int)VolumeSlider.Value);
         }
         else
         {
+            _fullscreenControls?.Close(); _fullscreenControls = null;
             Topmost = _oldTopmost;
             WindowState = WindowState.Normal;
             WindowStyle = _oldWindowStyle;
@@ -1078,6 +1115,153 @@ public partial class MainWindow : Window
         finally { _switchingPlaylist = false; }
     }
 
+
+    private void CancelRecovery()
+    {
+        CancelAndClear(ref _recoveryCts);
+        _recovering = false;
+    }
+    private async Task RecoverPlaybackAsync()
+    {
+        if (_closing || _recovering || _recoveryExhausted || _userPaused || _playingChannel == null ||
+            !ReferenceEquals(ChannelsList.SelectedItem, _playingChannel)) return;
+        _recovering = true;
+        var channel = _playingChannel;
+        var profile = _activePlaylist;
+        var owner = new CancellationTokenSource();
+        _recoveryCts = owner;
+        var ct = owner.Token;
+        try
+        {
+            while (!ct.IsCancellationRequested && !_closing && ReferenceEquals(profile, _activePlaylist) &&
+                ReferenceEquals(channel, ChannelsList.SelectedItem))
+            {
+                var delay = _recovery.NextDelay();
+                if (delay == null)
+                {
+                    _recoveryExhausted = true;
+                    SetStatus("Stream unavailable after 3 reconnect attempts. Press Play to retry.");
+                    return;
+                }
+                SetStatus($"Reconnecting {channel.Name} (attempt {_recovery.Attempts}/3)...");
+                await Task.Delay(delay.Value, ct);
+                await TuneSelectedAsync(true, recovery: true).WaitAsync(ct);
+                ct.ThrowIfCancellationRequested();
+                if (!_tuneSubmitted) continue;
+                long baseline = _lastProgress;
+                for (int i = 0; i < 40; i++)
+                {
+                    await Task.Delay(250, ct);
+                    if (_lastProgress > 0 && _lastProgress != baseline && _streamInfo.Playing)
+                    { SetStatus("Playing " + channel.Name + "."); return; }
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { App.LogException("playback.recovery", ex); }
+        finally
+        {
+            if (ReferenceEquals(_recoveryCts, owner)) { _recoveryCts = null; _recovering = false; owner.Dispose(); }
+        }
+    }
+    private void ToggleMute()
+    {
+        _muted = !_muted;
+        _ = ApplyMuteAsync();
+    }
+    private async Task ApplyMuteAsync()
+    {
+        try { await _playback.VolumeAsync(_muted ? 0 : (int)VolumeSlider.Value); }
+        catch (Exception ex) { App.LogException("playback.mute", ex); }
+    }
+    private async Task CheckForUpdatesAsync(bool manual)
+    {
+        if (_checkingUpdate || _closing || _installingUpdate) return;
+        _checkingUpdate = true;
+        UpdateButton.IsEnabled = false;
+        try
+        {
+            var current = typeof(MainWindow).Assembly.GetName().Version ?? new Version(0, 0, 0);
+            _availableRelease = await new GitHubUpdates(_updateHttp).CheckAsync(current, AppStorage.IsPortable, _updateCts.Token);
+            if (_closing) return;
+            UpdateButton.Content = _availableRelease == null ? "Check for updates" : $"Update to {_availableRelease.Version}";
+            UpdateButton.ToolTip = _availableRelease == null ? "Checks GitHub Releases" : "Download and install the latest release";
+            if (manual && _availableRelease == null) SetStatus("You are using the latest release.");
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            App.LogException("update.check", ex);
+            if (manual) SetStatus("Could not check GitHub for updates. Please try again later.");
+        }
+        finally { _checkingUpdate = false; UpdateButton.IsEnabled = true; }
+    }
+    private async void Update_Click(object sender, RoutedEventArgs e)
+    {
+        if (_installingUpdate || _closing) return;
+        if (_availableRelease == null) { await CheckForUpdatesAsync(true); return; }
+        var release = _availableRelease;
+        if (MessageBox.Show(this, $"Download and install HN-IPTV {release.Version}? The app will close after the download is verified. Saved playlists and settings are preserved.",
+            "Update HN-IPTV", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        _installingUpdate = true; UpdateButton.IsEnabled = false;
+        try
+        {
+            SetStatus("Downloading update...");
+            var prepared = await AppUpdater.PrepareAsync(release, AppStorage.IsPortable, _updateCts.Token);
+            if (_closing) return;
+            _preparedUpdate = prepared;
+            Close();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            App.LogException("update.download", ex);
+            SetStatus("Update could not be downloaded or verified. Your current installation is unchanged.");
+        }
+        finally { _installingUpdate = false; UpdateButton.IsEnabled = true; }
+    }
+    private async void OpenM3uUrl_Click(object sender, RoutedEventArgs e)
+    {
+        await _startupLoad;
+        if (_closing || !_libraryLoadedSuccessfully) return;
+        var dialog = new SourceDialog("M3U URL", "Enter an HTTP or HTTPS playlist URL.") { Owner = this };
+        if (dialog.ShowDialog() != true) return;
+        if (!SourceReader.IsWebUrl(dialog.Source)) { SetStatus("Enter a valid HTTP or HTTPS playlist URL."); return; }
+        try
+        {
+            SetImportEnabled(false);
+            _libraryCts.Cancel(); _libraryCts.Dispose(); _libraryCts = new();
+            var ct = _libraryCts.Token;
+            using var bytes = await SourceReader.ReadAsync(dialog.Source, 32 * 1024 * 1024, ct);
+            var channels = await Task.Run(() => { using var reader = new StreamReader(bytes); return M3uService.Parse(reader, ct); }, ct);
+            if (_closing || ct.IsCancellationRequested) return;
+            if (channels.Count == 0) throw new InvalidDataException("Playlist contains no channels.");
+            var profile = _library.Playlists.FirstOrDefault(p => p.Type == "m3u" && p.PlaylistUrl == dialog.Source)
+                ?? new PlaylistProfile { Name = new Uri(dialog.Source).Host, PlaylistUrl = dialog.Source };
+            if (!_library.Playlists.Contains(profile)) _library.Playlists.Add(profile);
+            _xtream?.Dispose(); _xtream = null; _activePlaylist = profile;
+            if (await SetChannelsAsync(channels, ChannelCatalog.GroupsFor(channels), SourceKind.M3u, profile.Name,
+                ChannelPreferences.ProviderKey("m3u", profile.PlaylistUrl))) CommitCatalog(profile, DateTimeOffset.UtcNow);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { App.LogException("m3u.url", ex); SetStatus("Unable to load playlist URL. Check the URL and connection."); }
+        finally { SetImportEnabled(true); }
+    }
+    private async void GuideSource_Click(object sender, RoutedEventArgs e)
+    {
+        var profile = _activePlaylist;
+        if (profile == null || profile.Type != "m3u") { SetStatus("Select an M3U playlist to configure its XMLTV guide."); return; }
+        var dialog = new SourceDialog("XMLTV guide", "Enter an XMLTV file path or HTTP/HTTPS URL (.xml or .xml.gz). Leave blank to remove the guide.", profile.EpgSource) { Owner = this };
+        if (dialog.ShowDialog() != true || !ReferenceEquals(profile, _activePlaylist)) return;
+        if (dialog.Source.Length > 0 && !SourceReader.IsWebUrl(dialog.Source) && !File.Exists(dialog.Source))
+        { SetStatus("Guide source must be a local file or HTTP/HTTPS URL."); return; }
+        profile.EpgSource = dialog.Source;
+        profile.LastEpgRefresh = default;
+        profile.CachedProviderPrograms.Clear(); profile.ProviderEpgFetchedAt.Clear();
+        SaveLibrarySafely();
+        await RefreshGuideAsync(true);
+    }
+
     private bool _finishClosing;
     private void SaveLibrarySafely()
     {
@@ -1108,7 +1292,7 @@ public partial class MainWindow : Window
         var identity = kind switch
         {
             SourceKind.Xtream => profile.ServerUrl.TrimEnd('/').ToLowerInvariant() + "\n" + profile.Username,
-            _ => profile.LocalPath.ToLowerInvariant()
+            _ => string.IsNullOrEmpty(profile.PlaylistUrl) ? profile.LocalPath.ToLowerInvariant() : profile.PlaylistUrl
         };
         var providerKey = ChannelPreferences.ProviderKey(profile.Type, identity);
 
@@ -1214,9 +1398,12 @@ public partial class MainWindow : Window
             {
                 if (profile.Type == "m3u")
                 {
-                    string localPath = AppStorage.ResolveM3u(profile.LocalPath);
-                    if (!File.Exists(localPath)) throw new FileNotFoundException("The imported M3U file moved or was deleted.");
-                    channels = await M3uService.ParseFileAsync(localPath, ct);
+                    if (SourceReader.IsWebUrl(profile.PlaylistUrl))
+                    {
+                        using var bytes = await SourceReader.ReadAsync(profile.PlaylistUrl, 32 * 1024 * 1024, ct);
+                        channels = await Task.Run(() => { using var reader = new StreamReader(bytes); return M3uService.Parse(reader, ct); }, ct);
+                    }
+                    else channels = await M3uService.ParseFileAsync(AppStorage.ResolveM3u(profile.LocalPath), ct);
                     groups = await Task.Run(() => ChannelCatalog.GroupsFor(channels), ct);
                 }
                 else if (profile.Type == "xtream")
@@ -1244,11 +1431,18 @@ public partial class MainWindow : Window
                 var oldXtream = _xtream;
                 _xtream = newXtream; newXtream = null;
                 oldXtream?.Dispose();
+                if (CatalogSnapshot.Matches(_channels, channels))
+                {
+                    profile.LastChannelRefresh = now; profile.LastLogoRefresh = now;
+                    SaveLibrarySafely();
+                    SetStatus("Playlist unchanged; cached channels and icons retained.");
+                    return;
+                }
                 // Avoid replacing playback while channel metadata is refreshed.
                 var identity = profile.Type switch
                 {
                     "xtream" => profile.ServerUrl.TrimEnd('/').ToLowerInvariant() + "\n" + profile.Username,
-                    _ => profile.LocalPath.ToLowerInvariant()
+                    _ => string.IsNullOrEmpty(profile.PlaylistUrl) ? profile.LocalPath.ToLowerInvariant() : profile.PlaylistUrl
                 };
                 var kind = profile.Type == "xtream" ? SourceKind.Xtream : SourceKind.M3u;
                 if (!await SetChannelsAsync(channels, groups, kind, profile.Name,
@@ -1304,9 +1498,30 @@ public partial class MainWindow : Window
         if (!_guideRefreshGate.Wait(0)) return;
         try
         {
-            // M3U files do not supply schedules themselves. Keep its existing guide
-            // display unchanged; no external matching or downloading takes place.
-            if (_source == SourceKind.Xtream)
+            if (_source == SourceKind.M3u)
+            {
+                var source = profile.EpgSource;
+                if (string.IsNullOrWhiteSpace(source)) { ResetGuidePreviews(); return; }
+                var channels = _channels;
+                var ct = _libraryCts.Token;
+                try
+                {
+                    using var bytes = await SourceReader.ReadAsync(source, 128 * 1024 * 1024, ct);
+                    var guide = await Task.Run(() => XmltvService.Parse(bytes, channels.Select(ch => ch.EpgId), ct), ct);
+                    if (_closing || ct.IsCancellationRequested || !ReferenceEquals(profile, _activePlaylist) || source != profile.EpgSource) return;
+                    var matched = new Dictionary<string, List<ProgramEntry>>(StringComparer.Ordinal);
+                    foreach (var ch in channels)
+                        if (guide.TryGetValue(ch.EpgId, out var entries))
+                            matched[PlaylistProfile.EpgKey(ch.GroupId, ch.Id)] = entries;
+                    profile.CachedProviderPrograms = matched;
+                    profile.ProviderEpgFetchedAt.Clear();
+                    ResetGuidePreviews();
+                    SetStatus($"XMLTV guide updated for {matched.Count} channels.");
+                }
+                catch (OperationCanceledException) { return; }
+                catch (Exception ex) { App.LogException("guide.xmltv", ex); SetStatus("Guide refresh failed; cached guide retained."); return; }
+            }
+            else if (_source == SourceKind.Xtream)
             {
                 if (force) profile.ProviderEpgFetchedAt.Clear();
                 ResetGuidePreviews();
@@ -1325,6 +1540,8 @@ public partial class MainWindow : Window
         e.Cancel = true;
         if (_closing) return;
         _closing = true;
+        CancelRecovery(); _updateCts.Cancel();
+        _fullscreenControls?.Close(); _fullscreenControls = null;
         if (_pip != null) { _pip.Close(); if (_pip != null) { _closing = false; return; } }
         TopBar.IsEnabled = false;
         _epgClock.Stop(); _refreshTimer.Stop(); _saveSelectionDebounce.Stop(); _infoTimer.Stop(); _volumeDebounce.Stop();
@@ -1342,11 +1559,22 @@ public partial class MainWindow : Window
             App.LogException("shutdown.save", ex);
             MessageBox.Show(this, "Some changes could not be saved. Previous saved data remains intact. Check free space and folder permissions.",
                 "HN-IPTV", MessageBoxButton.OK, MessageBoxImage.Warning);
+            if (_preparedUpdate != null)
+            {
+                _preparedUpdate = null; _closing = false; TopBar.IsEnabled = true;
+                _refreshTimer.Start(); _epgClock.Start(); _infoTimer.Start();
+                return;
+            }
         }
         try { await _playback.ShutdownAsync().WaitAsync(TimeSpan.FromSeconds(10)); }
         catch (Exception ex) { App.LogException("shutdown.playback", ex); }
         _logos.Dispose(); _xtream?.Dispose();
         await App.FlushDiagnosticsAsync();
+        if (_preparedUpdate != null)
+        {
+            try { AppUpdater.Start(_preparedUpdate, AppStorage.IsPortable); }
+            catch (Exception ex) { App.LogException("update.start", ex); MessageBox.Show(this, "The update could not start. Reopen HN-IPTV and try again.", "Update HN-IPTV"); }
+        }
         _finishClosing = true;
         Close();
         Application.Current.Shutdown();

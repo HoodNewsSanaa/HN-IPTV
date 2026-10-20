@@ -1,3 +1,13 @@
+# 0.10.0
+
+- Check GitHub Releases shortly after startup and offer an in-app update action. Download the matching installer or portable package, verify its SHA-256 checksum, save settings before closing, and preserve user data. Portable updates back up replaced files and roll back on copy failure.
+- Retain the existing catalog, selection and row state when refreshed channel metadata is unchanged. Display disk-cached logos before freshness checks and use conditional HTTP requests for expired icons.
+- Retry failed or stalled streams up to three times with increasing delays. Stop, channel changes and shutdown cancel pending recovery.
+- Add fullscreen controls over native video with mouse-driven visibility; Space pauses and M mutes.
+- Add HTTP/HTTPS M3U playlist import and per-channel User-Agent/Referer support in mpv and VLC. MPC comparison builds report unsupported headers explicitly.
+- Add optional XMLTV file/URL (.xml or .xml.gz) guides for M3U playlists, matched by tvg-id. Retain cached guides when refresh fails.
+- Use the project version for automatic releases. A deliberate version bump on main publishes one tested release; later pushes for that version validate without replacing it. Attach SHA256SUMS.txt alongside both packages.
+
 # 0.9.0 — release candidate
 
 - Borderless PiP with title/controls in owned hover overlays over the native video. Preserve the stream's display aspect when resizing; no reserved heading/footer or app-added padding.

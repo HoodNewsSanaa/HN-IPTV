@@ -25,6 +25,7 @@ internal sealed class PlaybackController
 
     private async Task RunAsync(Action action, CancellationToken ct = default)
     {
+        if (userAgent.Length > 0 || referer.Length > 0) throw new NotSupportedException("Use the mpv build for channels requiring HTTP headers.");
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try { await Task.Run(() => { ct.ThrowIfCancellationRequested(); if (!_disposed) action(); }, ct).ConfigureAwait(false); }
         finally { _gate.Release(); }
@@ -58,7 +59,7 @@ internal sealed class PlaybackController
             SetMenu(_window, IntPtr.Zero); SetParent(_window, target); Resize();
         }, ct).ConfigureAwait(false);
     }
-    public async Task PlayAsync(Uri uri, IntPtr hwnd, int volume, CancellationToken ct, int bufferMilliseconds = 1200)
+    public async Task PlayAsync(Uri uri, IntPtr hwnd, int volume, CancellationToken ct, int bufferMilliseconds = 1200, string userAgent = "", string referer = "")
     {
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try {

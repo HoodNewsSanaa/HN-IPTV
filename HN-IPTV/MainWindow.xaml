@@ -35,6 +35,8 @@
                     <Button Content="⚙" Click="PlaylistSettings_Click" ToolTip="Saved playlist refresh settings" Margin="0,0,7,0"/>
                     <Button Content="✕" Click="RemovePlaylist_Click" ToolTip="Remove selected playlist" Margin="0,0,7,0"/>
                     <Button Content="Rename" Click="RenamePlaylist_Click" Margin="0,0,7,0"/>
+                    <Button Content="M3U URL" Click="OpenM3uUrl_Click" Margin="0,0,7,0"/>
+                    <Button Content="Guide" Click="GuideSource_Click" ToolTip="XMLTV guide for the selected M3U playlist" Margin="0,0,7,0"/>
                     <Button Content="Open M3U" Click="OpenM3u_Click" Margin="0,0,9,0"/>
                     <Button Content="Connect Xtream" Background="#167BA0" Click="XtreamConnect_Click"/>
                 </StackPanel>
@@ -232,7 +234,7 @@
             <Grid Margin="16,0">
                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                 <TextBlock x:Name="StatusText" Text="Ready. Open M3U or connect a provider to load channels." Foreground="#8FA2BA" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                <TextBlock Grid.Column="1" Text="Double-click to tune  •  Long-press to favorite  •  F for fullscreen" Foreground="#657C95" FontSize="10" VerticalAlignment="Center"/>
+                <Button Grid.Column="1" x:Name="UpdateButton" Content="Check for updates" Click="Update_Click" Padding="8,2" FontSize="11" ToolTip="Checks GitHub Releases"/>
             </Grid>
         </Border>
     </Grid>

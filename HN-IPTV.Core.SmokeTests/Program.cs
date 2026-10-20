@@ -262,6 +262,71 @@ var attributes = M3uService.Parse("#EXTM3U\n#EXTINF:-1 group-title=\"First\" GRO
 Check(attributes.Single().GroupName == "News, live" && attributes.Single().Name == "Title group-title=\"Do not parse me\"", "metadata boundary and duplicate attributes");
 Console.WriteLine("Stream telemetry, PiP aspect and allocation-efficient parser checks passed.");
 
+
+// Reconnecting has a finite budget, reset only by an explicit user tune.
+var recovery = new RecoveryBudget();
+Check(recovery.NextDelay() == TimeSpan.FromSeconds(1) && recovery.NextDelay() == TimeSpan.FromSeconds(2) &&
+    recovery.NextDelay() == TimeSpan.FromSeconds(4) && recovery.NextDelay() == null, "bounded reconnect backoff");
+recovery.Reset();
+Check(recovery.NextDelay() == TimeSpan.FromSeconds(1), "manual tune resets retry budget");
+var headerChannels = M3uService.Parse("#EXTM3U\n#EXTINF:-1 tvg-id=\"one\",One\n#EXTVLCOPT:http-user-agent=Test Player\n#EXTVLCOPT:http-referrer=https://example.test/\nhttps://example.test/one\n#EXTINF:-1,Two\nhttps://example.test/two");
+Check(headerChannels[0].UserAgent == "Test Player" && headerChannels[0].Referer == "https://example.test/" &&
+    headerChannels[1].UserAgent == "" && headerChannels[1].Referer == "", "per-channel HTTP headers do not leak");
+var sameCatalog = M3uService.Parse(playlist);
+Check(CatalogSnapshot.Matches(parsed, sameCatalog), "unchanged metadata reuses catalog");
+Check(!CatalogSnapshot.Matches(parsed, [new Channel { Id = parsed[0].Id, Name = "Renamed" }]), "changed metadata invalidates catalog");
+Check(!CatalogSnapshot.Matches(headerChannels, M3uService.Parse("#EXTM3U\n#EXTINF:-1,One\nhttps://example.test/one")), "headers and catalog length affect refresh");
+var day = DateTimeOffset.UtcNow.Date;
+string stamp(DateTime value) => value.ToString("yyyyMMddHHmmss", System.Globalization.CultureInfo.InvariantCulture);
+var xml = $"<tv><programme channel='one' start='{stamp(day.AddHours(12))} +0200' stop='{stamp(day.AddHours(13))} +0200'><title>News &amp; Weather</title><desc>Details</desc></programme><programme channel='other' start='{stamp(day)} +0000' stop='{stamp(day.AddHours(1))} +0000'><title>Skip</title></programme></tv>";
+using (var input = new MemoryStream(Encoding.UTF8.GetBytes(xml)))
+{
+    var guide = XmltvService.Parse(input, ["one"]);
+    Check(guide.Count == 1 && guide["one"][0].Title == "News & Weather" &&
+        guide["one"][0].Start!.Value.UtcDateTime.Hour == 10, "XMLTV exact IDs, entity decoding and timezone");
+}
+bool dtdRejected = false;
+try { using var input = new MemoryStream(Encoding.UTF8.GetBytes("<!DOCTYPE tv [<!ENTITY x SYSTEM 'file:///private'>]><tv/>")); XmltvService.Parse(input, ["one"]); }
+catch (System.Xml.XmlException) { dtdRejected = true; }
+Check(dtdRejected, "XMLTV rejects external entities");
+using (var input = new MemoryStream(Encoding.UTF8.GetBytes(xml)))
+{
+    bool cancelled = false;
+    try { XmltvService.Parse(input, ["one"], new CancellationToken(true)); } catch (OperationCanceledException) { cancelled = true; }
+    Check(cancelled, "guide parsing cancels");
+}
+var updateJson = System.Text.Json.JsonSerializer.Serialize(new {
+    draft = false, prerelease = false, tag_name = "v0.10.0",
+    assets = new[] { new { name = "HN-IPTV-Setup.exe", browser_download_url = "https://github.com/HoodNewsSanaa/HN-IPTV/releases/download/v0.10.0/HN-IPTV-Setup.exe" },
+        new { name = "HN-IPTV-Portable.zip", browser_download_url = "https://github.com/HoodNewsSanaa/HN-IPTV/releases/download/v0.10.0/HN-IPTV-Portable.zip" } },
+    body = new string('a', 64) + "  HN-IPTV-Setup.exe\n" + new string('b', 64) + "  HN-IPTV-Portable.zip"
+});
+Check(GitHubUpdates.Parse(updateJson, new Version(0,9,2,0), false)?.AssetName == "HN-IPTV-Setup.exe", "installed update asset");
+Check(GitHubUpdates.Parse(updateJson, new Version(0,9,2,0), true)?.AssetName == "HN-IPTV-Portable.zip", "portable update asset");
+Check(GitHubUpdates.Parse(updateJson, new Version(0,10,0,0), true) == null &&
+    GitHubUpdates.Parse(updateJson, new Version(1,0,0), false) == null, "equal or older release is a no-op");
+Check(GitHubUpdates.Parse(updateJson.Replace("\"prerelease\":false", "\"prerelease\":true"), new Version(0,9,2), true) == null, "skip prereleases");
+bool wrongAssetRejected = false;
+try { GitHubUpdates.Parse(updateJson.Replace("https://github.com/", "https://example.test/"), new Version(0,9,2), false); }
+catch (InvalidDataException) { wrongAssetRejected = true; }
+Check(wrongAssetRejected, "reject update packages outside the repository");
+var updateFixture = Path.Combine(Path.GetTempPath(), "hn-update-test-" + Guid.NewGuid().ToString("N"));
+try
+{
+    await File.WriteAllTextAsync(updateFixture, "package fixture");
+    var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(updateFixture)));
+    await PackageIntegrity.VerifyAsync(updateFixture, digest);
+    await File.AppendAllTextAsync(updateFixture, "tampered");
+    bool mismatch = false;
+    try { await PackageIntegrity.VerifyAsync(updateFixture, digest); } catch (InvalidDataException) { mismatch = true; }
+    Check(mismatch, "tampered update cannot install");
+    bool oversized = false;
+    try { using var ignored = await SourceReader.ReadAsync(updateFixture, 2); } catch (InvalidDataException) { oversized = true; }
+    Check(oversized, "source size limit");
+}
+finally { File.Delete(updateFixture); }
+Console.WriteLine("Catalog caching, reconnect budget, M3U headers, XMLTV and update integrity checks passed.");
+
 static void Check(bool condition, string name)
 {
     if (!condition) throw new Exception(name + " check failed");

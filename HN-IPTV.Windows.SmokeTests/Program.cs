@@ -303,7 +303,7 @@ internal static class Program
                     if (!cc.Content.ToString()!.Contains("On")) throw new InvalidOperationException("CC button state did not update.");
                     await UntilAsync(() => Task.FromResult(File.Exists(Path.Combine(AppStorage.DataDirectory, "player-settings.json")) &&
                         HnIptv.Preferences.PlayerSettings.Load(Path.Combine(AppStorage.DataDirectory, "player-settings.json")).CaptionsEnabled));
-                    await (Task)Invoke(window, "TuneSelectedAsync", true)!;
+                    await (Task)Invoke(window, "TuneSelectedAsync", true, false)!;
                     await UntilAsync(async () => { var state = await CaptionState(); return state.Visible && state.Text.Contains("HN-IPTV caption test"); });
                     cc.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     await UntilAsync(async () => !(await CaptionState()).Visible);

@@ -4,7 +4,7 @@ on:
     inputs:
       version:
         description: Version to build
-        default: '0.9.2'
+        default: '0.10.0'
         required: true
       publish_release:
         description: Publish the tested packages as a GitHub Release
@@ -43,17 +43,27 @@ jobs:
         shell: pwsh
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-          REQUESTED_VERSION: ${{ inputs.version || '0.9.2' }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PUBLISH_REQUESTED: ${{ github.event_name == 'release' || inputs.publish_release == true || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         run: |
           $version = $env:REQUESTED_VERSION
+          if (-not $version) { [xml]$project = Get-Content HN-IPTV/HN-IPTV.csproj -Raw; $version = [string]$project.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1 }
           if ($env:RELEASE_TAG) {
-            if ($env:RELEASE_TAG -notmatch '^v(\d+\.\d+\.\d+)$') { throw 'Use a version tag such as v0.9.2.' }
+            if ($env:RELEASE_TAG -notmatch '^v(\d+\.\d+\.\d+)$') { throw 'Use a version tag such as v0.10.0.' }
             $version = $Matches[1]
           }
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must be major.minor.patch.' }
           "number=$version" >> $env:GITHUB_OUTPUT
-          "publish=$($env:PUBLISH_REQUESTED.ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          $publish = $env:PUBLISH_REQUESTED.ToLowerInvariant()
+          # A deliberate version bump on main requests one release. Ordinary
+          # pushes for an already-tagged version only run validation.
+          if ($env:GITHUB_EVENT_NAME -eq 'push' -and $publish -eq 'true') {
+            gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/v$version" --silent 2>$null
+            if ($LASTEXITCODE -eq 0) { $publish = 'false' }
+            $global:LASTEXITCODE = 0
+          }
+          "publish=$publish" >> $env:GITHUB_OUTPUT
       - name: Restore
         shell: pwsh
         run: |
@@ -67,6 +77,9 @@ jobs:
       - name: Installer orchestration regressions
         shell: pwsh
         run: ./test-installer-control-flow.ps1
+      - name: Portable updater preservation and rollback
+        shell: pwsh
+        run: ./test-updater.ps1
       - name: Publish application once
         shell: pwsh
         env:
@@ -154,10 +167,10 @@ jobs:
               exit 1
             fi
             gh release view "$RELEASE_TAG" --json body -q '.body' > release-notes.txt
-            gh release upload "$RELEASE_TAG" dist/HN-IPTV-Setup.exe dist/HN-IPTV-Portable.zip --clobber
+            gh release upload "$RELEASE_TAG" dist/HN-IPTV-Setup.exe dist/HN-IPTV-Portable.zip dist/SHA256SUMS.txt --clobber
           else
             printf 'Install the new setup over the existing version to preserve saved data.\n' > release-notes.txt
-            gh release create "$RELEASE_TAG" --latest --target "$SOURCE_COMMIT" --title "HN-IPTV $RELEASE_TAG" --notes-file release-notes.txt dist/HN-IPTV-Setup.exe dist/HN-IPTV-Portable.zip
+            gh release create "$RELEASE_TAG" --latest --target "$SOURCE_COMMIT" --title "HN-IPTV $RELEASE_TAG" --notes-file release-notes.txt dist/HN-IPTV-Setup.exe dist/HN-IPTV-Portable.zip dist/SHA256SUMS.txt
           fi
           printf '\nSHA-256 checksums:\n```text\n' >> release-notes.txt
           cat dist/SHA256SUMS.txt >> release-notes.txt
