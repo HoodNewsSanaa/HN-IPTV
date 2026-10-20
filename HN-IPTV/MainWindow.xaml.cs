@@ -319,7 +319,7 @@ public partial class MainWindow : Window
         }
         finally { _loadingCatalog = false; }
         RefreshChannels();
-        SetStatus($"Loaded {_channels.Count} channels from {sourceName}. Double-click to tune.");
+        SetStatus($"Loaded {_channels.Count} channels from {sourceName}. Click a channel to tune.");
         App.LogDiagnostic($"{sourceKind} catalog bound: {_channels.Count} channels");
 
         _catalogReady = true;
@@ -770,7 +770,7 @@ public partial class MainWindow : Window
 #if USE_MPV
             await _playback.CaptionsAsync(_playerSettings.CaptionsEnabled, cts.Token);
 #endif
-            await _playback.PlayAsync(uri, VideoView.VideoHandle, (int)VolumeSlider.Value, cts.Token, _playerSettings.BufferMilliseconds, channel.UserAgent, channel.Referer);
+            await _playback.PlayAsync(uri, VideoView.VideoHandle, _muted ? 0 : (int)VolumeSlider.Value, cts.Token, _playerSettings.BufferMilliseconds, channel.UserAgent, channel.Referer);
             if (cts.IsCancellationRequested || _closing) return;
             _failedTunes.Remove(failureKey);
             _pip?.SetChannelTitle(channel.Name);
