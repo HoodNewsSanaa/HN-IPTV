@@ -196,7 +196,9 @@ class Engine:
             if source != "en" and target != "en":
                 return self.translate(self.translate(text, source, "en"), "en", target)
             raise
-        tokens = tokenizer.encode((prefix + text)[:3000], out_type=str)
+        tokens = tokenizer.encode(text[:3000], out_type=str)
+        if prefix:
+            tokens.insert(0, prefix)
         translated = model.translate_batch([tokens], beam_size=2, max_decoding_length=512)[0].hypotheses[0]
         result = tokenizer.decode(translated).strip()
         self.cache[key] = result

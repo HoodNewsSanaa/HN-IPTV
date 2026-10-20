@@ -1,10 +1,18 @@
 using System.Reflection;
+using System.IO;
 using System.Runtime.Loader;
 using System.Text.Json;
 using HnIptv.Translation;
 
 if (args.Length != 3) throw new ArgumentException("Expected published assembly, synthetic data directory and report path.");
-var assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.GetFullPath(args[0]));
+var published = Path.GetFullPath(args[0]);
+var runtimeFiles = Path.Combine(Path.GetDirectoryName(published)!, "TranslationRuntime");
+foreach (var source in Directory.GetFiles(runtimeFiles, "*", SearchOption.AllDirectories)) {
+    var destination = Path.Combine(AppContext.BaseDirectory, "TranslationRuntime", Path.GetRelativePath(runtimeFiles, source));
+    Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+    File.Copy(source, destination, true);
+}
+var assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(published);
 var storage = assembly.GetType("HnIptv.AppStorage", true)!;
 storage.GetProperty("TestDataDirectory", BindingFlags.Static | BindingFlags.NonPublic)!.SetValue(null, Path.GetFullPath(args[1]));
 storage.GetMethod("Initialize", BindingFlags.Static | BindingFlags.Public)!.Invoke(null, null);
