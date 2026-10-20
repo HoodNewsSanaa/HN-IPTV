@@ -1,3 +1,8 @@
+# 0.11.1 — Feature Rich preview
+
+- Keep translated captions working when returning from picture in picture to the main player.
+- Include the completed fullscreen focus, local translation and stable-to-feature upgrade checks.
+
 # 0.11.0 — Feature Rich preview
 
 - Restore fullscreen controls and keyboard exit after switching applications; preserve normal Alt-Tab behavior.
