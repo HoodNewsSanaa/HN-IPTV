@@ -1,0 +1,66 @@
+name: Translation model benchmarks
+on:
+  push:
+    branches: [HN-IPTV-translation-benchmarks]
+    paths: ['tools/benchmarks/**', '.github/workflows/model-benchmarks.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency: {group: translation-model-benchmark, cancel-in-progress: true}
+env:
+  HF_HUB_DISABLE_XET: '1'
+  HF_HUB_DISABLE_TELEMETRY: '1'
+  OMP_NUM_THREADS: '2'
+  MKL_NUM_THREADS: '2'
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install numpy scipy soundfile huggingface_hub pyarrow
+      - run: python tools/benchmarks/compare_models.py prepare
+      - uses: actions/upload-artifact@v4
+        with: {name: model-benchmark-inputs, path: benchmark-data}
+  speech:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: {model: [base, small, medium, vosk-ar]}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/download-artifact@v4
+        with: {name: model-benchmark-inputs, path: benchmark-data}
+      - run: pip install numpy scipy soundfile huggingface_hub faster-whisper==1.2.1 vosk jiwer sacrebleu
+      - run: python tools/benchmarks/compare_models.py speech ${{ matrix.model }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: speech-model-${{ matrix.model }}
+          path: benchmark-data/result-*.json
+  text:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: {model: [argos, opus, nllb]}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/download-artifact@v4
+        with: {name: model-benchmark-inputs, path: benchmark-data}
+      - run: pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install numpy scipy soundfile huggingface_hub transformers==4.57.1 sentencepiece==0.2.1 ctranslate2 sacremoses==0.1.1 subword-nmt==0.3.8 jiwer sacrebleu
+      - run: python tools/benchmarks/compare_models.py text ${{ matrix.model }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: text-model-${{ matrix.model }}
+          path: benchmark-data/result-*.json
