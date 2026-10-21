@@ -365,8 +365,10 @@ internal static class Program
                     overlay.SetScreenRegions(new[] { new HnIptv.Translation.ScreenTranslationRegion(
                         0.15, 0.7, 0.5, 0.1, "Translated headline at its original position", "#203040", "#FFFFFF") }, 1920, 1080, "en");
                     if (overlay.PositionedRegionCount != 1) throw new InvalidOperationException("Positioned translation was not drawn.");
-                    if (Math.Abs(overlay.Width-host.ActualWidth)>2 || Math.Abs(overlay.Height-host.ActualHeight)>2)
-                        throw new InvalidOperationException("Positioned overlay does not follow the video viewport.");
+                    // Fullscreen layout and DPI updates complete asynchronously after Show().
+                    // Require the overlay to converge to the actual native-video host size.
+                    await UntilAsync(() => Task.FromResult(overlay.PositionedRegionCount == 1 &&
+                        Math.Abs(overlay.Width-host.ActualWidth)<=2 && Math.Abs(overlay.Height-host.ActualHeight)<=2));
                     overlay.SetSpeech("Continuous speech caption");
                     overlay.SetSpeech(""); // A silent chunk must preserve the previous caption.
                     await UntilAsync(() => Task.FromResult(overlay.IsVisible));

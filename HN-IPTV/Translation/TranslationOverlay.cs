@@ -114,6 +114,8 @@ internal sealed class TranslationOverlay : Window
             var origin = source.CompositionTarget.TransformFromDevice.Transform(video.PointToScreen(new Point(0,0)));
             Width = video.ActualWidth; Height = video.ActualHeight; Left = origin.X; Top = origin.Y;
             double aspect = _aspect?.Invoke() ?? (_frameHeight > 0 ? (double)_frameWidth / _frameHeight : Width / Height);
+            if (!double.IsFinite(aspect) || aspect <= 0)
+                aspect = _frameHeight > 0 ? (double)_frameWidth / _frameHeight : Width / Height;
             var viewport = ScreenOverlayLayout.Viewport(Width,Height,aspect);
             RenderRegions(viewport);
             _speech.FontSize = _screen.FontSize = Math.Clamp(viewport.Width / 40,12,21);
