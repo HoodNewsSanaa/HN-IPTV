@@ -1,0 +1,51 @@
+name: Translation pipeline validation
+on:
+  push:
+    branches: [HN-IPTV-translation-benchmarks]
+    paths: ['tools/model-package/**', '.github/workflows/model-package.yml']
+  workflow_dispatch:
+permissions: {contents: write, actions: read}
+env: {HF_HUB_DISABLE_XET: '1', HF_HUB_DISABLE_TELEMETRY: '1', OMP_NUM_THREADS: '2', MKL_NUM_THREADS: '2'}
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/download-artifact@v4
+        with:
+          name: model-benchmark-inputs
+          path: benchmark-data
+          run-id: 39579866889
+          github-token: ${{ github.token }}
+      - run: pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install numpy soundfile scipy huggingface_hub transformers==4.57.1 sentencepiece==0.2.1 ctranslate2 sacremoses==0.1.1 sacrebleu
+      - run: python tools/model-package/build_opus.py
+      - uses: actions/upload-artifact@v4
+        with: {name: opus-model-package, path: model-package}
+      - name: Publish immutable optional model pack
+        env: {GH_TOKEN: ${{ github.token }}}
+        run: |
+          if ! gh release view translation-models-v1 >/dev/null 2>&1; then
+            gh release create translation-models-v1 model-package/opus-ar-en-ct2-f16.zip model-package/model-manifest.json model-package/SHA256SUMS.txt --prerelease --latest=false --title "Optional offline translation models v1" --notes "Pinned Helsinki-NLP OPUS-MT Arabic to English, Apache-2.0. Standalone CTranslate2 float16 weights; CPU/GPU compatible. License and source revision included. Downloaded once by HN-IPTV model setup; this is not an application update."
+          fi
+  profiles:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - uses: actions/download-artifact@v4
+        with:
+          name: model-benchmark-inputs
+          path: benchmark-data
+          run-id: 39579866889
+          github-token: ${{ github.token }}
+      - run: pip install numpy scipy soundfile huggingface_hub faster-whisper==1.2.1 jiwer sacrebleu
+      - run: python tools/benchmarks/live_profiles.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: live-profile-results, path: 'benchmark-data/result-*.json'}

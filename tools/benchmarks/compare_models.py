@@ -152,7 +152,7 @@ def text(name):
                 raw=model.translate_batch([src.encode(sample["source"],out_type=str)+["</s>"]],beam_size=3,max_decoding_length=160,no_repeat_ngram_size=3)[0].hypotheses[0]
                 actual=dst.decode(raw)
                 if actual.strip()!=expected.strip():raise AssertionError("Standalone SentencePiece tokenizer differs: "+actual+" / "+expected)
-            for file in ("source.spm","target.spm","config.json"):
+            for file in ("source.spm","target.spm"):
                 import shutil;shutil.copyfile(path/file,converted/file)
             print("Standalone OPUS tokenizer parity passed.",flush=True)
         path=converted
