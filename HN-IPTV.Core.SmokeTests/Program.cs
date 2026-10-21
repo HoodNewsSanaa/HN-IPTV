@@ -332,12 +332,16 @@ var previewJson = updateJson.Replace("v0.10.0", "feature-rich-v0.10.0")
 Check(GitHubUpdates.Parse(previewJson, new Version(0,9,2), false, true) != null, "feature update channel accepts its own previews");
 Check(GitHubUpdates.Parse(previewJson, new Version(0,9,2), false) == null, "stable update channel excludes previews");
 Check(GitHubUpdates.Parse(updateJson, new Version(0,9,2), false, true) == null, "feature update channel does not switch to stable builds");
-var translationSettings = new HnIptv.Translation.TranslationSettings { InputLanguage = "JA-jp", OutputLanguage = "es", Acceleration = "invalid" }.Normalize();
+var translationSettings = new HnIptv.Translation.TranslationSettings { Provider = "azure", InputLanguage = "JA-jp", OutputLanguage = "es", Acceleration = "invalid" }.Normalize();
 Check(translationSettings.InputLanguage == "ja" && translationSettings.Target == "es", "translation language/model normalization");
 Check(translationSettings.Acceleration == "auto", "invalid acceleration falls back to auto");
 Check((translationSettings with { Acceleration = "cuda" }).Normalize().Acceleration == "auto", "legacy CUDA preference migrates to automatic Whisper acceleration");
 var gpuSettings = (translationSettings with { Acceleration = "vulkan" }).Normalize();
 Check(gpuSettings.Acceleration == "vulkan", "Vulkan GPU recognition remains selectable");
+var localSettings = new HnIptv.Translation.TranslationSettings { Provider = "whisper", OutputLanguage = "es" }.Normalize();
+Check(localSettings.UsesLocalTranslation && localSettings.Target == "en" && localSettings.OutputLanguage == "en", "on-device Whisper only outputs English");
+Check(new HnIptv.Translation.TranslationSettings().UsesLocalTranslation, "new installations default to local translation");
+Check((localSettings with { Provider = "azure", OutputLanguage = "ja" }).Normalize().Target == "ja", "Azure retains other target languages");
 var translationVersion = new HnIptv.Translation.TranslationGeneration();
 long firstTranslation = translationVersion.Current;
 translationVersion.Advance();

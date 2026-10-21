@@ -8,18 +8,19 @@ public sealed record TranslationSettings
     public string InputLanguage { get; init; } = "auto";
     public string OutputLanguage { get; init; } = "auto";
     public string Acceleration { get; init; } = "auto";
-    public string Provider { get; init; } = "azure";
+    public string Provider { get; init; } = "whisper";
     public string AzureRegion { get; init; } = "global";
     public int BufferSeconds { get; init; } = 15;
-    public string Target => OutputLanguage == "auto" ? NormalizeLanguage(CultureInfo.CurrentUICulture.TwoLetterISOLanguageName) : NormalizeLanguage(OutputLanguage);
+    public bool UsesLocalTranslation => Provider == "whisper";
+    public string Target => UsesLocalTranslation ? "en" : OutputLanguage == "auto" ? NormalizeLanguage(CultureInfo.CurrentUICulture.TwoLetterISOLanguageName) : NormalizeLanguage(OutputLanguage);
     public static string NormalizeLanguage(string? value)
     {
         var code = (value ?? "auto").Trim().ToLowerInvariant().Split('-')[0];
         return code is "auto" || (code.Length is 2 or 3 && code.All(char.IsAsciiLetter)) ? code : "auto";
     }
     public TranslationSettings Normalize() => this with {
-        InputLanguage = NormalizeLanguage(InputLanguage), OutputLanguage = NormalizeLanguage(OutputLanguage),
-        Provider = "azure",
+        InputLanguage = NormalizeLanguage(InputLanguage), OutputLanguage = Provider == "azure" ? NormalizeLanguage(OutputLanguage) : "en",
+        Provider = Provider == "azure" ? "azure" : "whisper",
         BufferSeconds = BufferSeconds is 10 or 15 ? BufferSeconds : 0,
         AzureRegion = string.IsNullOrWhiteSpace(AzureRegion) ? "global" : AzureRegion.Trim().ToLowerInvariant(),
         Acceleration = Acceleration is "auto" or "cpu" or "vulkan" ? Acceleration : "auto"

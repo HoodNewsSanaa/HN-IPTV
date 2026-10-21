@@ -4,7 +4,7 @@ on:
     inputs:
       version:
         description: Version to build
-        default: '0.14.0'
+        default: '0.15.0'
         required: true
       publish_release:
         description: Publish the tested packages as a GitHub Release
@@ -12,7 +12,7 @@ on:
         default: false
   pull_request:
   push:
-    branches: [main, master, HN-IPTV-Feature-Rich, HN-IPTV-Whisper-Buffer]
+    branches: [main, master, HN-IPTV-Feature-Rich, HN-IPTV-Whisper-Local-Translation]
   release:
     types: [published]
 permissions:

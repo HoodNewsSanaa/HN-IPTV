@@ -13,15 +13,17 @@ internal sealed class NativeRecognizer : IDisposable
     private double _lastVad,_lastDecode;
     private double _offset;
     internal sealed record Recognition(string Text,string Language,bool Final,double StartSeconds,double EndSeconds);
-    internal NativeRecognizer(string directory,string modelPath,string language,bool gpu,int bufferSeconds)
+    internal NativeRecognizer(string directory,string modelPath,string language,bool gpu,int bufferSeconds,bool translate)
     {
         RuntimeOptions.RuntimeLibraryOrder=gpu?[RuntimeLibrary.Vulkan]:[RuntimeLibrary.Cpu];
         _factory=WhisperFactory.FromPath(modelPath,new WhisperFactoryOptions{UseGpu=gpu});
         try {
-            _processor=_factory.CreateBuilder().WithLanguage(language=="auto"?"auto":language)
+            var builder=_factory.CreateBuilder().WithLanguage(language=="auto"?"auto":language)
                 .WithThreads(Math.Clamp(Environment.ProcessorCount/2,1,8))
                 .WithNoContext().WithTemperature(0).WithTemperatureInc(0)
-                .WithNoSpeechThreshold(.6f).WithProbabilities().Build();
+                .WithNoSpeechThreshold(.6f).WithProbabilities();
+            if(translate)builder.WithTranslate();
+            _processor=builder.Build();
         }catch{_factory.Dispose();throw;}
         try {
             _vadFactory=WhisperVadFactory.FromPath(Path.Combine(Path.GetDirectoryName(modelPath)!,"ggml-silero-v6.2.0.bin"));
@@ -60,7 +62,7 @@ internal sealed class NativeRecognizer : IDisposable
             double start=Math.Clamp(segment.Start.TotalSeconds,0,duration),end=Math.Clamp(segment.End.TotalSeconds,0,duration);
             if(end>start)result.Add(new(text,segment.Language,true,offset+start,offset+end));
         }
-        // Keep unfinished text private and retain its audio for one longer decode. Only final text reaches Azure.
+        // Keep unfinished text private and retain its audio for one longer decode. Only final text reaches the caption pipeline.
         if(_buffered&&!finish&&(result.Count==0||!HnIptv.Translation.SpeechBoundary.EndsSentence(result[^1].Text)))return [];
         _audio.Clear();_offset+=duration;_lastVad=_lastDecode=0;
         return result;

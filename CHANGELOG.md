@@ -1,3 +1,12 @@
+# 0.15.0
+
+- Add Whisper on-device speech-to-English translation with no Azure key, API quota or translation network requests.
+- Use multilingual Whisper Medium Q5 (539 MB) for local translation; Turbo remains the recognition model for optional Azure mode because Turbo is not trained for translation.
+- Keep synchronized 10/15-second buffering, pause-aware captions, adaptive Silero speech boundaries and native Vulkan/CPU acceleration.
+- Add a clear translation-engine setting. Local mode fixes the target to English and disables Azure controls; Azure still supports other output languages.
+- Prepare only the selected model, reuse the existing speech detector/media transport, and preserve saved Azure credentials and previous downloads.
+- Test real Spanish audio producing English captions without an Azure key, alongside recognition, buffering and upgrade regressions.
+
 # 0.14.0
 
 - Replace Nemotron recognition with multilingual Whisper large-v3-turbo Q5 (574 MB), using Whisper.net 1.9.1 and whisper.cpp.

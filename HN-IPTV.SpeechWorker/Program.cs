@@ -2,10 +2,10 @@ using System.Text.Json;
 using System.Text;
 
 Console.InputEncoding=Console.OutputEncoding=new UTF8Encoding(false);
-if(args.Length!=5)return 2;
+if(args.Length!=6)return 2;
 // No network libraries, cloud credentials, telemetry, or user-content logging in this process.
 try {
-    using var recognizer=new NativeRecognizer(args[0],args[1],args[2],args[3]!="cpu",int.Parse(args[4],System.Globalization.CultureInfo.InvariantCulture));
+    using var recognizer=new NativeRecognizer(args[0],args[1],args[2],args[3]!="cpu",int.Parse(args[4],System.Globalization.CultureInfo.InvariantCulture),args[5]=="translate");
     Console.WriteLine("{\"ready\":true}");
     string? line;
     while((line=Console.ReadLine())!=null) {

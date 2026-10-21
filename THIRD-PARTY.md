@@ -1,3 +1,7 @@
+## Whisper on-device translation model (0.15.0)
+
+The separately downloaded multilingual Whisper Medium Q5 model is MIT licensed (licenses/OpenAI-Whisper.txt). Source: ggerganov/whisper.cpp revision f281eb45af861ab5e5297d23694b7d46e090c02c, ggml-medium-q5_0.bin, 539,212,467 bytes. SHA-256: 19fea4b380c3a618ec4723c3eef2eb785ffba0d0538cf43f8f235e7b3b34220f. Existing Whisper.net, whisper.cpp, and Silero notices below also apply. The test workflow uses eSpeak NG only on CI to generate synthetic Spanish speech; it is not included in the application.
+
 Silero VAD v6.2.0 is MIT (licenses/Silero-VAD.txt), downloaded separately as a 885,098-byte GGML file from ggml-org/whisper-vad revision 9ffd54a1e1ee413ddf265af9913beaf518d1639b. SHA-256: 2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987.
 
 ## Whisper recognition (0.14.0)

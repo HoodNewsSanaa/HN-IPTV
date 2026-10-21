@@ -46,7 +46,7 @@ static class AzureTranslationChecks
         catch(OperationCanceledException) { }
         var settings=new TranslationSettings { Provider="azure",AzureRegion="EastUS" }.Normalize();
         Require(settings.Provider=="azure" && settings.AzureRegion=="eastus","provider settings normalize");
-        Require(new TranslationSettings().Provider=="azure","Nemotron uses Azure text translation");
+        Require(new TranslationSettings().UsesLocalTranslation,"new settings support translation without Azure");
         Require(!JsonSerializer.Serialize(settings).Contains("synthetic-key"),"settings contain no API key");
         Console.WriteLine("Azure request authentication, regional/global routing, caching, errors, cancellation and settings checks passed.");
     }

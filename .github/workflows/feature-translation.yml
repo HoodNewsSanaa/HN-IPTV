@@ -1,7 +1,7 @@
 name: Feature Rich local translation
 on:
   push:
-    branches: [HN-IPTV-Feature-Rich, HN-IPTV-Nemotron-Trial, HN-IPTV-Whisper-Buffer]
+    branches: [HN-IPTV-Feature-Rich, HN-IPTV-Nemotron-Trial, HN-IPTV-Whisper-Local-Translation]
   pull_request:
     paths: ['HN-IPTV.SpeechWorker/**', 'HN-IPTV/Translation/**', 'HN-IPTV.Core/Translation/**', 'tests/TranslationRuntimeHarness/**']
   workflow_dispatch:
@@ -27,7 +27,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: artifacts/whisper-runtime-data
-          key: native-whisper-turbo-q5-1.9.1-v1
+          key: native-whisper-medium-turbo-q5-1.9.1-v1
       - name: Generate speech fixture
         shell: powershell
         run: |
@@ -38,10 +38,28 @@ jobs:
           $voice.SetOutputToWaveFile((Join-Path $PWD 'artifacts/spoken.wav'), $format)
           $voice.Speak('Hello world. This is a streaming speech recognition test.')
           $voice.Dispose()
+      - name: Generate Spanish speech fixture with eSpeak NG
+        shell: pwsh
+        run: |
+          $msi = Join-Path $PWD 'artifacts/espeak-ng.msi'
+          Invoke-WebRequest 'https://github.com/espeak-ng/espeak-ng/releases/download/1.52.0/espeak-ng.msi' -OutFile $msi
+          $extract = Join-Path $PWD 'artifacts/espeak'
+          $install = Start-Process msiexec.exe -ArgumentList @('/a', $msi, '/qn', "TARGETDIR=$extract") -WindowStyle Hidden -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw 'Could not extract test speech synthesizer.' }
+          $exe = Get-ChildItem $extract -Recurse -Filter 'espeak-ng.exe' | Select-Object -First 1
+          if (-not $exe) { throw 'Test speech synthesizer missing.' }
+          $speechData = Get-ChildItem $extract -Recurse -Directory -Filter 'espeak-ng-data' | Select-Object -First 1
+          if (-not $speechData) { throw 'Test voice data missing.' }
+          & $exe.FullName "--path=$($speechData.Parent.FullName)" -v es -s 140 -w artifacts/spanish.wav 'Hola mundo. Esta es una prueba de traduccion. Buenos dias a todos.'
+          if ($LASTEXITCODE -ne 0) { throw 'Spanish speech generation failed.' }
       - name: Actual native speech, reset, silence and safe migration
         run: dotnet run --project tests/TranslationRuntimeHarness -c Release -- artifacts/publish/HN-IPTV.dll artifacts/whisper-runtime-data artifacts/native-runtime.json artifacts/spoken.wav
+      - name: Actual on-device Spanish to English translation without an Azure key
+        run: dotnet run --project tests/TranslationRuntimeHarness -c Release -- artifacts/publish/HN-IPTV.dll artifacts/whisper-runtime-data artifacts/local-translation.json artifacts/spanish.wav local
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: native-translation-validation
-          path: artifacts/native-runtime.json
+          path: |
+            artifacts/native-runtime.json
+            artifacts/local-translation.json

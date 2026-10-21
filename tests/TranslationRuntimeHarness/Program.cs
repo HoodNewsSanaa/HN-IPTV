@@ -4,14 +4,15 @@ using System.Runtime.Loader;
 using System.Text.Json;
 using HnIptv.Translation;
 
-if(args.Length!=4)throw new ArgumentException("Expected published assembly, isolated data, report and PCM WAV fixture.");
+if(args.Length is not (4 or 5))throw new ArgumentException("Expected published assembly, isolated data, report and PCM WAV fixture.");
 var published=Path.GetFullPath(args[0]);var data=Path.GetFullPath(args[1]);Directory.CreateDirectory(data);
 var assembly=AssemblyLoadContext.Default.LoadFromAssemblyPath(published);
 var storage=assembly.GetType("HnIptv.AppStorage",true)!;
 storage.GetProperty("TestDataDirectory",BindingFlags.Static|BindingFlags.NonPublic)!.SetValue(null,data);
 storage.GetMethod("Initialize",BindingFlags.Static|BindingFlags.Public)!.Invoke(null,null);
 var runtime=assembly.GetType("HnIptv.LocalTranslationRuntime",true)!;
-var settings=new TranslationSettings{InputLanguage="en",OutputLanguage="es",Acceleration="cpu"};
+bool local=args.Length==5&&args[4]=="local";
+var settings=new TranslationSettings{Provider=local?"whisper":"azure",InputLanguage=local?"auto":"en",OutputLanguage=local?"en":"es",Acceleration="cpu"};
 string legacy=Path.Combine(data,"translation");Directory.CreateDirectory(legacy);File.WriteAllText(Path.Combine(legacy,"legacy-test-model"),"fake old model");
 string sentinel=Path.Combine(data,"playlist-sentinel");File.WriteAllText(sentinel,"keep playlists and keys outside legacy directory");
 await (Task)runtime.GetMethod("InstallAsync",BindingFlags.Static|BindingFlags.NonPublic)!.Invoke(null,[settings,(Action<string>)Console.WriteLine,CancellationToken.None])!;
@@ -32,20 +33,28 @@ try {
     // WAV generated below is mono PCM16 at 44.1 kHz. Locate the data chunk rather than assuming 44-byte header.
     using var reader=new BinaryReader(File.OpenRead(args[3]));reader.BaseStream.Position=12;byte[] pcm=[];int rate=0,channels=0,bits=0;
     while(reader.BaseStream.Position+8<=reader.BaseStream.Length){string id=new string(reader.ReadChars(4));int size=reader.ReadInt32();long end=reader.BaseStream.Position+size;if(id=="fmt "){if(reader.ReadInt16()!=1)throw new Exception("PCM fixture required");channels=reader.ReadInt16();rate=reader.ReadInt32();reader.ReadInt32();reader.ReadInt16();bits=reader.ReadInt16();}if(id=="data")pcm=reader.ReadBytes(size);reader.BaseStream.Position=end+(size%2);}
-    if(rate!=44100||channels!=1||bits!=16)throw new Exception("Unexpected fixture format.");
-    byte[] stereo=new byte[pcm.Length*2];for(int i=0;i<pcm.Length/2;i++){stereo[i*4]=stereo[i*4+2]=pcm[i*2];stereo[i*4+1]=stereo[i*4+3]=pcm[i*2+1];}
+    if(rate is not (44100 or 22050)||channels!=1||bits!=16)throw new Exception("Unexpected fixture format.");
+    int frames=(int)((long)(pcm.Length/2)*44100/rate);byte[] stereo=new byte[frames*4];
+    for(int i=0;i<frames;i++) {
+        double position=i*rate/44100d;int index=(int)position,next=Math.Min(index+1,pcm.Length/2-1);
+        short value=(short)(BitConverter.ToInt16(pcm,index*2)*(1-(position-index))+BitConverter.ToInt16(pcm,next*2)*(position-index));
+        BitConverter.TryWriteBytes(stereo.AsSpan(i*4,2),value);BitConverter.TryWriteBytes(stereo.AsSpan(i*4+2,2),value);
+    }
     for(int offset=0;offset<stereo.Length;offset+=56448)await Results((Task)recognize.Invoke(worker,[stereo.AsSpan(offset,Math.Min(56448,stereo.Length-offset)).ToArray(),CancellationToken.None])!);
     // A trailing pause should finalize a complete sentence before the forced batch deadline.
     for(int i=0;i<4;i++)await Results((Task)recognize.Invoke(worker,[new byte[56448],CancellationToken.None])!);
     if(timed.Count==0)throw new Exception("Speech pause and punctuation did not produce an adaptive endpoint.");
     await Results((Task)finish.Invoke(worker,[CancellationToken.None])!);
-    if(!texts.Any(x=>x.Contains("hello",StringComparison.OrdinalIgnoreCase)))throw new Exception("Native worker did not recognize spoken fixture.");
+    string combined=string.Join(" ",texts);
+    Console.WriteLine("Synthetic fixture result: "+combined);
+    if(!combined.Contains("hello",StringComparison.OrdinalIgnoreCase))throw new Exception("Native worker did not recognize or translate the spoken greeting.");
+    if(local&&(combined.Contains("hola",StringComparison.OrdinalIgnoreCase)||!(combined.Contains("translation",StringComparison.OrdinalIgnoreCase)||combined.Contains("test",StringComparison.OrdinalIgnoreCase))))throw new Exception("Spanish speech was not translated into English locally.");
     if(!texts.Any(x=>x.Contains('.')||x.Contains('?')))throw new Exception("Whisper did not preserve sentence punctuation.");
-    if(timed.Count==0||timed.Any(t=>t.Start<0||t.End<=t.Start||t.End>pcm.Length/88200d+1.8))throw new Exception("Whisper segment timestamps do not match the input audio clock.");
+    if(timed.Count==0||timed.Any(t=>t.Start<0||t.End<=t.Start||t.End>pcm.Length/(rate*2d)+1.8))throw new Exception("Whisper segment timestamps do not match the input audio clock.");
     await (Task)reset.Invoke(worker,[CancellationToken.None])!;texts.Clear();
     await Results((Task)recognize.Invoke(worker,[new byte[176400],CancellationToken.None])!);
     await Results((Task)finish.Invoke(worker,[CancellationToken.None])!);
     if(texts.Any(x=>!string.IsNullOrWhiteSpace(x)))throw new Exception("Old channel words leaked into silence after reset.");
 }finally{await worker.DisposeAsync();}
-File.WriteAllText(args[2],JsonSerializer.Serialize(new{passed=true,adaptive_endpoint=true,previous_downloads_preserved=true,model="Whisper large-v3-turbo Q5",seconds=elapsed.Elapsed.TotalSeconds,backend="cpu"}));
+File.WriteAllText(args[2],JsonSerializer.Serialize(new{passed=true,adaptive_endpoint=true,previous_downloads_preserved=true,local_translation=local,model=local?"Whisper Medium Q5":"Whisper large-v3-turbo Q5",seconds=elapsed.Elapsed.TotalSeconds,backend="cpu"}));
 Console.WriteLine("Actual native worker speech, reset, silence and migration checks passed.");

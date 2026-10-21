@@ -1,23 +1,21 @@
-# Whisper buffered captions (0.14.0)
+# Feature Rich 0.15.0 — on-device Whisper translation
 
-The current recognition stack is **Whisper large-v3-turbo Q5 → Azure Translator → timed captions**. Open Translation settings and prepare the new 574 MB multilingual model once. Choose Auto acceleration (Vulkan GPU, with validated CPU fallback) or CPU / Vulkan explicitly. Native runtimes are included; Python and CUDA toolkit installs are unnecessary.
+Choose **Whisper on device (English)** under Translation settings → Speech → Translation engine, then click Download / prepare Whisper and save. The multilingual Medium Q5 model downloads once (539,212,467 bytes), with the existing 0.9 MB Silero speech detector reused. Whisper recognizes foreign speech and translates it directly into English on this PC. No Azure key, text quota, or cloud translation request is used in this mode. Media streams and first-time component downloads still need their normal network connections.
 
-The existing Generous time mode delays original audio and video together by a target 10 or 15 seconds, giving Whisper an 8- or 12-second audio batch before translation. Captions follow media time and pause with the video. If processing cannot keep up, playback waits for translated media; the selected delay is not a hard latency guarantee. CPU inference can be substantially slower.
+New settings default to on-device translation. Existing saved Azure settings retain their selected provider; switch the engine explicitly to use the new local mode. Local output is always English. Choose Azure for other output languages; that mode keeps the existing Turbo Q5 recognition model, Azure key and region controls. Medium is used for local translation because Turbo is not trained for speech translation.
 
-Whisper generates punctuation using audio context. Azure receives the recognized text only; neither vocal emotion nor every nuance of intonation is preserved. Caption timing is phrase-level, not exact translated-word alignment. Automatic input language detection and manual input/output language settings remain available.
+Vulkan GPU and CPU runtimes remain bundled; no Python or CUDA toolkit download is needed. Auto validates the GPU runtime and can fall back to CPU. Local Medium translation may take longer than Turbo recognition plus Azure, particularly on CPU. The selected buffer is a target, not a guaranteed maximum latency; playback refills if the model falls behind.
 
-Existing Nemotron files are retained so installing the previous release can reuse them. New model setup happens from Translation settings and does not automatically download at boot. Existing Azure credentials, playlists and the FFmpeg transport are reused.
+## Buffered captions
 
-## Buffered playback
+Click Translate speech and choose Live, Generous time — 10 seconds, or Generous time — 15 seconds (recommended). A local speech detector proposes pauses after four seconds; Whisper punctuation helps finalize complete sentences. Unfinished text waits for more context, bounded by an eight-second batch in 10-second mode or a twelve-second batch in 15-second mode. This is heuristic sentence grouping, not guaranteed paragraph or idea detection. Text does not fully preserve emotion or tone.
 
-Click Translate speech and select Live, Generous time — 10 seconds, or Generous time — 15 seconds (recommended). The timing choice is also available in settings. Speech blocks end adaptively at a detected pause followed by Whisper sentence punctuation, starting after four seconds. Unfinished text waits for more context. The 10-second mode caps batches at eight seconds; the 15-second mode caps them at twelve seconds. A 0.9 MB local Silero speech detector supplies pause detection. Sentence endings are heuristic; paragraph/idea completeness cannot be guaranteed. Live mode uses five-second recognition batches and does not delay the video.
+The mpv build takes recognition audio ahead of playback from one incoming feed and delays original audio/video together. Compact captions follow media time, pause with the video, and rise above fullscreen controls. Translated-word alignment is approximate within the source speech interval.
 
-The mpv build extracts audio ahead of playback from one incoming feed. It releases original audio/video together only after the selected lead time and completed translation. Azure failures stop translation and return to live playback. Azure requires Internet access, and recognized text counts toward your Azure quota.
-
-The optional FFmpeg 9.0.2 media transport downloads once (115 MB compressed). It copies original video/audio codecs into a local rolling playlist. Temporary media is limited to 512 MB per session; stop, channel changes and disabling translation clean it. Abandoned owned sessions are cleaned on next buffered use. A long pause can outlive the rolling window and require rebuilding the buffer. Captions follow the paused media clock and rise above fullscreen controls.
+The FFmpeg 9.0.2 media transport is reused or downloaded once (115 MB compressed). Temporary media is limited to 512 MB per session and cleaned on stop, channel changes and next use after a crash. A long pause can exceed the rolling window and require rebuilding the buffer. Live mode remains available.
 
 ## Installation
 
-Run HN-IPTV-Setup.exe over the existing installation; do not uninstall first. App identity, playlists, preferences and encrypted Azure credentials are preserved. Downloaded Whisper data is stored under speech-whisper within the app data directory; portable installations use their own data directory.
+Install HN-IPTV-Setup.exe over the existing installation. Saved playlists, preferences, Azure credentials and existing model downloads are retained. Medium and Turbo have separate readiness markers, so preparing one mode does not falsely mark the other model ready. The feature-rich-v* prerelease update channel is unchanged.
 
-The release retains the existing feature-rich-v* prerelease update channel. Native playback, fullscreen/PiP, installer upgrades, core checks and real Whisper recognition must pass before publication. Screen OCR translation remains retired; channel-provided CC remains available.
+Real Spanish-to-English local translation, English recognition, adaptive speech boundaries, native playback, pause/fullscreen/PiP, core checks and installer upgrades are checked before publication. GPU performance still needs validation on the user's hardware. Screen OCR remains retired; channel-provided CC is available.
