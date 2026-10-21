@@ -9,6 +9,7 @@ internal static class BufferedPlaybackChecks
 {
     internal static async Task RunAsync(MainWindow window,NativeVideoHost host,PlaybackController controller,Dictionary<string,object> report,string directory)
     {
+        await (Task)typeof(MainWindow).GetMethod("StopPlaybackAsync",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(window,null)!;
         await BufferedTranslationSource.PrepareAsync(Console.WriteLine,CancellationToken.None);
         string fixture=Path.Combine(directory,"buffer-fixture.ts");
         var info=new ProcessStartInfo(BufferedTranslationSource.Executable){UseShellExecute=false,CreateNoWindow=true,WindowStyle=ProcessWindowStyle.Hidden,RedirectStandardError=true};
@@ -38,15 +39,17 @@ internal static class BufferedPlaybackChecks
             var initial=await controller.ProgressAsync();
             if(initial.Time>3500)throw new Exception("Delayed player jumped to the live edge or used the wrong timestamp origin: "+initial.Time);
             await FrameColor(controller,true);
-            double clock=2.5;
+            double clock=initial.Time/1000d;
+            var timer=new System.Windows.Threading.DispatcherTimer{Interval=TimeSpan.FromMilliseconds(80)};
+            timer.Tick+=async(_,_)=>clock=(await controller.ProgressAsync()).Time/1000d;timer.Start();
             var overlay=new TranslationOverlay(()=>(window,host)){SpeechPlaybackClock=()=>clock};
             try {
                 overlay.ScheduleSpeech("A timestamped caption",2,4);
                 await Until(()=>Task.FromResult(overlay.SpeechCaptionVisible),cancel.Token);
                 await controller.PauseAsync();var paused=await controller.ProgressAsync();await Task.Delay(1300,cancel.Token);
                 if(Math.Abs((await controller.ProgressAsync()).Time-paused.Time)>120||!overlay.SpeechCaptionVisible)throw new Exception("Pause changed the media/caption clock.");
-                clock=4.1;await Until(()=>Task.FromResult(!overlay.SpeechCaptionVisible),cancel.Token);await controller.PauseAsync();
-            }finally{overlay.Close();}
+                await controller.PauseAsync();await Until(()=>Task.FromResult(!overlay.SpeechCaptionVisible),cancel.Token);
+            }finally{timer.Stop();overlay.Close();}
             await Until(async()=>(await controller.ProgressAsync()).Time>=8300,cancel.Token);
             await FrameColor(controller,false);
             await consume;
@@ -75,7 +78,7 @@ internal static class BufferedPlaybackChecks
         using var stream=new MemoryStream(bytes);var image=BitmapDecoder.Create(stream,BitmapCreateOptions.None,BitmapCacheOption.OnLoad).Frames[0];
         var converted=new FormatConvertedBitmap(image,System.Windows.Media.PixelFormats.Bgra32,null,0);byte[] pixels=new byte[converted.PixelWidth*converted.PixelHeight*4];converted.CopyPixels(pixels,converted.PixelWidth*4,0);
         long r=0,b=0;for(int i=0;i<pixels.Length;i+=4){b+=pixels[i];r+=pixels[i+2];}
-        if(red?r<=b*2:b<=r*2)throw new Exception("Buffered video disagreed with its source timestamp.");
+        if(red?r<=b*2:b<=r*2)throw new Exception($"Buffered video disagreed with its source timestamp: expectedRed={red}, red={r}, blue={b}, time={(await controller.ProgressAsync()).Time}.");
     }
     private static async Task Until(Func<Task<bool>> condition,CancellationToken ct)
     {for(int i=0;i<300;i++){if(await condition())return;await Task.Delay(100,ct);}throw new TimeoutException("Buffered playback check timed out.");}

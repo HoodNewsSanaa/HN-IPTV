@@ -51,9 +51,14 @@ public partial class MainWindow
     }
     private async void TranslationSettings_Click(object sender,RoutedEventArgs e)
     {
+        bool wasBuffered=_bufferedTranslation!=null||_bufferPlaybackStopped;
         await StopTranslationSessionAsync();
         var dialog=new TranslationSettingsDialog(_translationSettings){Owner=this};
         if(dialog.ShowDialog()==true){_translationSettings=dialog.Settings;try{_translationSettings.Save(TranslationSettingsPath);}catch(Exception ex){App.LogException("translation.settings.save",ex);SetStatus("Translation settings could not be saved.");}}
+        if(wasBuffered&&!_closing&&_playingChannel!=null&&_playingStreamUri!=null) {
+            try{await _playback.PlayAsync(_playingStreamUri,VideoView.VideoHandle,_muted?0:(int)VolumeSlider.Value,CancellationToken.None,_playerSettings.BufferMilliseconds,_playingChannel.UserAgent,_playingChannel.Referer);_tuneSubmitted=true;_progressAge.Restart();}
+            catch(Exception ex){App.LogException("translation.resume",ex);}
+        }
         await RestartTranslationAsync();
     }
     private async void TranslateSpeech_Click(object sender,RoutedEventArgs e)
@@ -183,10 +188,10 @@ public partial class MainWindow
         }catch(OperationCanceledException){}
     }
     private void TranslationFailed(string message){SetStatus(message);_translationOverlay?.SetMessage(message,10);_translateSpeech=false;RenderTranslationButtons();Dispatcher.BeginInvoke(new Action(()=>{if(!_closing)_=RestartTranslationAsync();}));}
-    private async Task StopTranslationSessionAsync()
+    private async Task StopTranslationSessionAsync(bool preserveWorker=false)
     {
         _translationGeneration.Advance();CancelAndClear(ref _translationSession);var overlay=_translationOverlay;_translationOverlay=null;overlay?.Close();
-        await _translationGate.WaitAsync();try{await StopTranslationResourcesAsync();}finally{_translationGate.Release();}
+        await _translationGate.WaitAsync();try{await StopTranslationResourcesAsync(preserveWorker);}finally{_translationGate.Release();}
     }
     private async Task StopTranslationResourcesAsync(bool preserveWorker=false,bool restoreLive=false)
     {

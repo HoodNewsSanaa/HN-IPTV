@@ -756,7 +756,8 @@ public partial class MainWindow : Window
         try
         {
             _tuneGeneration++;
-            await StopTranslationSessionAsync();
+            if(_bufferedTranslation!=null||_bufferPlaybackStopped)await StopTranslationSessionAsync(preserveWorker:true);
+            else {_translationGeneration.Advance();_translationOverlay?.Clear();}
             _playingChannel = channel; _tuneWatch = Stopwatch.StartNew(); _tuneSubmitted = false;
             _streamInfo = StreamInfo.Empty; RenderStreamInfo();
             _infoTimer.Interval = TimeSpan.FromMilliseconds(200); _infoTimer.Start();
