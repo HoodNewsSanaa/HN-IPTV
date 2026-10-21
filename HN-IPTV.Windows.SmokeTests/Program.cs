@@ -373,13 +373,18 @@ internal static class Program
                         Math.Abs(overlay.Width-host.ActualWidth)<=2 && Math.Abs(overlay.Height-host.ActualHeight)<=2));
                     var activeControls = (FullscreenControls)typeof(MainWindow).GetField("_fullscreenControls", Private)!.GetValue(window)!;
                     window.Activate(); activeControls.Reveal();
+                    overlay.Clear(); // Exercise bottom captions without a translated banner moving them to the top.
                     overlay.QueueSpeech(new[] { new HnIptv.Translation.SpeechCaptionCue("A compact timed caption",1.5) });
                     await UntilAsync(() => Task.FromResult(activeControls.IsVisible &&
+                        overlay.SpeechCaptionVisible && overlay.SpeechCaptionBottom > 0 &&
+                        overlay.SpeechCaptionBottom <= host.PointFromScreen(activeControls.PointToScreen(new Point(0,0))).Y-8 &&
                         overlay.CaptionBottomInset >= host.ActualHeight-host.PointFromScreen(activeControls.PointToScreen(new Point(0,0))).Y+10));
                     double raisedInset = overlay.CaptionBottomInset;
+                    double raisedCaption = overlay.SpeechCaptionBottom;
                     activeControls.Hide();
                     ((DispatcherTimer)typeof(FullscreenControls).GetField("_timer", Private)!.GetValue(activeControls)!).Stop();
-                    await UntilAsync(() => Task.FromResult(overlay.CaptionBottomInset < raisedInset-5));
+                    await UntilAsync(() => Task.FromResult(overlay.CaptionBottomInset < raisedInset-5 &&
+                        overlay.SpeechCaptionBottom > raisedCaption+5));
                     await UntilAsync(() => Task.FromResult(!overlay.SpeechCaptionVisible));
                     results["captions_avoid_fullscreen_controls"] = true;
                     results["timed_speech_captions_expire"] = true;

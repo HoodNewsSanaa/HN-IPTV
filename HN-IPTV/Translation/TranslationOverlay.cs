@@ -31,6 +31,7 @@ internal sealed class TranslationOverlay : Window
     internal Func<Window?>? ControlsWindow { get; init; }
     internal double CaptionBottomInset => _captions.Margin.Bottom;
     internal bool SpeechCaptionVisible => _speech.Visibility == Visibility.Visible;
+    internal double SpeechCaptionBottom => _speech.TranslatePoint(new Point(0,_speech.ActualHeight),(UIElement)Content).Y;
 
     internal TranslationOverlay(Func<(Window, FrameworkElement)> target, Func<double>? aspect = null)
     {
