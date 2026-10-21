@@ -5,23 +5,25 @@ namespace HnIptv;
 
 internal sealed class TranslationSettingsDialog:Window
 {
-    private readonly ComboBox _input=new(){IsEditable=true},_output=new(){IsEditable=true},_acceleration=new();
+    private readonly ComboBox _input=new(){IsEditable=true},_output=new(){IsEditable=true},_acceleration=new(),_buffer=new();
     private readonly PasswordBox _azureKey=new();private readonly TextBox _region=new();
     private readonly TextBlock _azureStatus=new(){TextWrapping=TextWrapping.Wrap};
     private readonly TextBox _log=new(){IsReadOnly=true,Height=150,TextWrapping=TextWrapping.Wrap,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};
     private readonly CancellationTokenSource _cancel=new();private bool _working;
-    internal TranslationSettings Settings=>new TranslationSettings{InputLanguage=_input.Text,OutputLanguage=_output.Text,Acceleration=_acceleration.SelectedItem as string??"auto",AzureRegion=_region.Text}.Normalize();
+    internal TranslationSettings Settings=>new TranslationSettings{InputLanguage=_input.Text,OutputLanguage=_output.Text,Acceleration=_acceleration.SelectedItem as string??"auto",AzureRegion=_region.Text,BufferSeconds=_buffer.SelectedIndex==1?10:_buffer.SelectedIndex==2?15:0}.Normalize();
     internal TranslationSettingsDialog(TranslationSettings settings)
     {
         Title="HN-IPTV — Translation";Width=600;Height=610;MinWidth=480;MinHeight=480;WindowStartupLocation=WindowStartupLocation.CenterOwner;
         var choices=new[]{"auto","en","es","fr","de","pt","it","ar","ja","ko","ru","uk","hi","tr","vi","nl","pl","sv","cs","nb","da","bg","fi","hr","el","hu","ro","sk","sl","et","lv","lt","zh"};
         _input.ItemsSource=choices;_output.ItemsSource=choices;_input.Text=settings.InputLanguage;_output.Text=settings.OutputLanguage;
         _acceleration.ItemsSource=new[]{"auto","cuda","cpu"};_acceleration.SelectedItem=settings.Acceleration;_region.Text=settings.AzureRegion;
+        _buffer.ItemsSource=new[]{"Live captions","Generous time — 10 seconds","Generous time — 15 seconds"};_buffer.SelectedIndex=settings.BufferSeconds==10?1:settings.BufferSeconds==15?2:0;
         try{_azureKey.Password=AzureTranslationCredentials.Load();}catch(Exception ex){_azureStatus.Text=ex.Message;}
         var panel=new StackPanel{Margin=new Thickness(20)};var azure=new StackPanel{Margin=new Thickness(20)};
         void Field(StackPanel p,string label,Control control){p.Children.Add(new TextBlock{Text=label,Margin=new Thickness(0,10,0,4)});p.Children.Add(control);}
         panel.Children.Add(new TextBlock{Text="Nemotron recognizes speech locally → Azure translates text → timed captions. One multilingual model; no separate language packs. Screen OCR and the old local translators have been retired.",TextWrapping=TextWrapping.Wrap});
         Field(panel,"Input language — Auto detects; manual language code is optional",_input);Field(panel,"Output language — Auto uses Windows display language",_output);Field(panel,"Recognition acceleration",_acceleration);
+        Field(panel,"Translation timing (also offered when enabling Translate)",_buffer);
         panel.Children.Add(new TextBlock{Text="Model: Nemotron 3.5 ASR Streaming Q8 (742 MB). Native CPU runtime: 5.5 MB download; optional CUDA runtime: 102 MB. Language accuracy varies; some languages are experimental. Setup validates inference before deleting old Python, Whisper, OCR, translation packs and their CUDA files. Playlists, settings and Azure keys are preserved.",TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,12,0,0)});
         var install=new Button{Content="Download / prepare Nemotron",Margin=new Thickness(0,12,0,8)};panel.Children.Add(install);panel.Children.Add(_log);
         azure.Children.Add(new TextBlock{Text="Azure receives recognized text only. Audio stays on this PC. Your key is encrypted for your Windows account when saved.",TextWrapping=TextWrapping.Wrap});

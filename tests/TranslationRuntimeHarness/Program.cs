@@ -22,8 +22,11 @@ var prepare=type.GetMethod("PrepareAsync",BindingFlags.Instance|BindingFlags.Non
 var recognize=type.GetMethod("RecognizeAsync",BindingFlags.Instance|BindingFlags.NonPublic)!;
 var finish=type.GetMethod("FinishAsync",BindingFlags.Instance|BindingFlags.NonPublic)!;
 var reset=type.GetMethod("ResetAsync",BindingFlags.Instance|BindingFlags.NonPublic)!;
-var texts=new List<string>();
-async Task Results(Task task){await task;var value=task.GetType().GetProperty("Result")!.GetValue(task);foreach(var item in (System.Collections.IEnumerable)value!)texts.Add((string)item.GetType().GetProperty("Text")!.GetValue(item)!);}
+var texts=new List<string>();var timed=new List<(double Start,double End)>();
+async Task Results(Task task){await task;var value=task.GetType().GetProperty("Result")!.GetValue(task);foreach(var item in (System.Collections.IEnumerable)value!){
+    string text=(string)item.GetType().GetProperty("Text")!.GetValue(item)!;texts.Add(text);
+    if(text.Any(char.IsLetterOrDigit)&&(bool)item.GetType().GetProperty("Final")!.GetValue(item)!)timed.Add(((double)item.GetType().GetProperty("StartSeconds")!.GetValue(item)!,(double)item.GetType().GetProperty("EndSeconds")!.GetValue(item)!));
+}}
 try {
     await (Task)prepare.Invoke(worker,[CancellationToken.None])!;
     // WAV generated below is mono PCM16 at 44.1 kHz. Locate the data chunk rather than assuming 44-byte header.
@@ -34,6 +37,7 @@ try {
     for(int offset=0;offset<stereo.Length;offset+=56448)await Results((Task)recognize.Invoke(worker,[stereo.AsSpan(offset,Math.Min(56448,stereo.Length-offset)).ToArray(),CancellationToken.None])!);
     await Results((Task)finish.Invoke(worker,[CancellationToken.None])!);
     if(!texts.Any(x=>x.Contains("hello",StringComparison.OrdinalIgnoreCase)))throw new Exception("Native worker did not recognize spoken fixture.");
+    if(timed.Count==0||timed.Any(t=>t.Start<0||t.End<=t.Start||t.End>pcm.Length/88200d+.5))throw new Exception("Native word timestamps do not match the input audio clock.");
     await (Task)reset.Invoke(worker,[CancellationToken.None])!;texts.Clear();
     await Results((Task)recognize.Invoke(worker,[new byte[176400],CancellationToken.None])!);
     await Results((Task)finish.Invoke(worker,[CancellationToken.None])!);

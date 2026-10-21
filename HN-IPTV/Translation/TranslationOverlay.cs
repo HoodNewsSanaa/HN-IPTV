@@ -12,6 +12,9 @@ internal sealed class TranslationOverlay : Window
 {
     private readonly TextBlock _speech = Line(), _screen = Line(), _message = Line();
     private readonly CaptionHistory _history = new();
+    private readonly TimedCaptions _timed = new();
+    internal Func<double?>? SpeechPlaybackClock { get; set; }
+    internal void ScheduleSpeech(string text,double start,double end) { _timed.AddParagraph(text,start,end);Position(); }
     private readonly Queue<(SpeechCaptionCue Cue, long At)> _speechQueue = new();
     private long _cueUntil;
     private readonly Canvas _regions = new() { IsHitTestVisible = false };
@@ -71,6 +74,11 @@ internal sealed class TranslationOverlay : Window
     }
     private void AdvanceSpeechCue()
     {
+        if(SpeechPlaybackClock!=null) {
+            var position=SpeechPlaybackClock();
+            Set(_speech,position.HasValue?_timed.At(position.Value):"");
+            _speechAt=Stopwatch.GetTimestamp();return;
+        }
         long now = Stopwatch.GetTimestamp();
         if (_cueUntil > now) return;
         if (_cueUntil != 0) { Set(_speech,""); _cueUntil = 0; }
@@ -109,6 +117,7 @@ internal sealed class TranslationOverlay : Window
     }
     internal void Clear()
     {
+        _timed.Clear();
         _speechQueue.Clear(); _cueUntil = 0;
         _history.Clear(); ClearRegions(); Set(_speech,""); Set(_screen,""); Set(_message,""); Position();
     }

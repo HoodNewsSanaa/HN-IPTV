@@ -1,4 +1,4 @@
-# HN-IPTV 0.13.0 — Feature Rich preview
+# HN-IPTV 0.13.1 — Feature Rich preview
 
 See [FEATURE-RICH.md](FEATURE-RICH.md) for Nemotron/Azure translation setup, fullscreen fixes and installable branch artifacts. The installer upgrades an existing stable copy in place and preserves saved data.
 

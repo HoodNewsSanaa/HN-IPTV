@@ -1,7 +1,7 @@
 name: Feature Rich local translation
 on:
   push:
-    branches: [HN-IPTV-Feature-Rich, HN-IPTV-Nemotron-Trial]
+    branches: [HN-IPTV-Feature-Rich, HN-IPTV-Nemotron-Trial, HN-IPTV-Generous-Buffer]
   pull_request:
     paths: ['HN-IPTV.SpeechWorker/**', 'HN-IPTV/Translation/**', 'HN-IPTV.Core/Translation/**', 'tests/TranslationRuntimeHarness/**']
   workflow_dispatch:

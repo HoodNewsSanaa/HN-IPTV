@@ -10,6 +10,7 @@ public sealed record TranslationSettings
     public string Acceleration { get; init; } = "auto";
     public string Provider { get; init; } = "azure";
     public string AzureRegion { get; init; } = "global";
+    public int BufferSeconds { get; init; } = 15;
     public string Target => OutputLanguage == "auto" ? NormalizeLanguage(CultureInfo.CurrentUICulture.TwoLetterISOLanguageName) : NormalizeLanguage(OutputLanguage);
     public static string NormalizeLanguage(string? value)
     {
@@ -19,6 +20,7 @@ public sealed record TranslationSettings
     public TranslationSettings Normalize() => this with {
         InputLanguage = NormalizeLanguage(InputLanguage), OutputLanguage = NormalizeLanguage(OutputLanguage),
         Provider = "azure",
+        BufferSeconds = BufferSeconds is 10 or 15 ? BufferSeconds : 0,
         AzureRegion = string.IsNullOrWhiteSpace(AzureRegion) ? "global" : AzureRegion.Trim().ToLowerInvariant(),
         Acceleration = Acceleration is "auto" or "cpu" or "cuda" ? Acceleration : "auto"
     };

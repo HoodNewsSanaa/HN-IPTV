@@ -468,6 +468,7 @@ internal static class Program
                 if (child is ValueTuple<long, long, double> childMetrics) {
                     results["child_private_bytes"] = childMetrics.Item1; results["child_working_set_bytes"] = childMetrics.Item2; results["child_cpu_ms"] = childMetrics.Item3;
                 }
+                if(BuildInfo.Engine=="mpv") {stage="generous buffer";await BufferedPlaybackChecks.RunAsync(window,host,controller,results,root);}
                 results["cpu_time_ms"] = Process.GetCurrentProcess().TotalProcessorTime.TotalMilliseconds;
                 results["private_bytes"] = Process.GetCurrentProcess().PrivateMemorySize64;
                 results["working_set_bytes"] = Process.GetCurrentProcess().WorkingSet64;
@@ -492,7 +493,7 @@ internal static class Program
         };
         // A dispatcher/native deadlock must fail CI instead of consuming the entire job.
         _ = Task.Run(async () => {
-            await Task.Delay(TimeSpan.FromSeconds(120));
+            await Task.Delay(TimeSpan.FromSeconds(180));
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(report))!);
             File.WriteAllText(report, JsonSerializer.Serialize(new { passed = false, engine = BuildInfo.Engine, error_type = "WatchdogTimeout", stage }));
             foreach (var child in Process.GetProcessesByName("mpc-hc64")) {

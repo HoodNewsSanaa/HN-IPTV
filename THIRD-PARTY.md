@@ -31,6 +31,10 @@ Optional multilingual turbo recognition uses [mobiuslabsgmbh/faster-whisper-larg
 
 The public benchmark uses [Google FLEURS](https://huggingface.co/datasets/google/fleurs) Arabic test recordings (CC-BY-4.0) and [OPUS-100](https://huggingface.co/datasets/Helsinki-NLP/opus-100) Arabic-English test text. These fixtures are evaluation data and are not packaged in the installer. See TRANSLATION-BENCHMARKS.md for scope, metrics and limitations.
 
-## Native streaming speech (0.13.0)
+## Native streaming speech (0.13.1)
 
 NeMo-Speech.cpp v0.2.0 is downloaded separately from NVIDIA's official release under Apache-2.0, with bundled third-party notices retained in the downloaded SDK. Nemotron 3.5 ASR Streaming 0.6B Q8 weights use OpenMDW 1.1; see https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b. The app pins the model revision and verifies SHA-256. No weights are embedded in the installer. Azure Translator is an external Microsoft service configured with the user's own account.
+
+## Optional buffered media transport
+
+Generous time downloads Gyan's FFmpeg 9.0.2 essentials Windows build from https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2 and verifies SHA-256 60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba. The FFmpeg executable runs as a separate process; its bundled license and documentation are retained in the downloaded archive directory. FFmpeg project and source information: https://ffmpeg.org/ and https://www.gyan.dev/ffmpeg/builds/.

@@ -31,7 +31,7 @@ internal sealed class NativeRecognizer : IDisposable
     internal void Reset()
     {
         if (_stream != 0) { nemo_speech_asr_stream_close(_stream); _stream=0; }
-        var options=nemo_speech_asr_recognition_options_default(); options.Language=_language;options.Interim=1;
+        var options=nemo_speech_asr_recognition_options_default(); options.Language=_language;options.Interim=1;options.Words=1;options.Punctuation=1;
         Check(nemo_speech_asr_streaming_recognize(_recognizer,ref options,out _stream));
     }
     internal List<Recognition> Push(float[] samples, int rate, bool finish=false)
@@ -46,14 +46,17 @@ internal sealed class NativeRecognizer : IDisposable
                 string text=Marshal.PtrToStringUTF8(nemo_speech_asr_result_transcript(result,0)) ?? "";
                 string language=nemo_speech_asr_result_language_count(result,0)>0
                     ? Marshal.PtrToStringUTF8(nemo_speech_asr_result_language_code(result,0,0)) ?? "auto" : "auto";
-                results.Add(new(text,language,nemo_speech_asr_result_is_final(result)!=0));
+                nuint count=nemo_speech_asr_result_word_count(result,0);
+                double start=count>0?nemo_speech_asr_result_word_start_time(result,0,0)/1000d:0;
+                double end=count>0?nemo_speech_asr_result_word_end_time(result,0,count-1)/1000d:0;
+                results.Add(new(text,language,nemo_speech_asr_result_is_final(result)!=0,start,end));
             } finally { nemo_speech_asr_result_destroy(result); }
         }
         throw new InvalidOperationException("Recognition results did not drain.");
     }
     private static void Check(int status) { if(status!=0)throw new InvalidOperationException(Marshal.PtrToStringUTF8(nemo_speech_asr_last_error()) ?? "Native recognition failed."); }
     public void Dispose() { if(_stream!=0)nemo_speech_asr_stream_close(_stream);if(_recognizer!=0)nemo_speech_asr_destroy(_recognizer);_stream=_recognizer=0;Marshal.FreeCoTaskMem(_language); }
-    internal sealed record Recognition(string Text,string Language,bool Final);
+    internal sealed record Recognition(string Text,string Language,bool Final,double StartSeconds,double EndSeconds);
     [StructLayout(LayoutKind.Sequential)] private struct Backend { public nuint Size;public int Gpu; }
     [StructLayout(LayoutKind.Sequential)] private struct Model { public nuint Size;public nint Path,Name; }
     [StructLayout(LayoutKind.Sequential)] private struct Streaming { public nuint Size;public float Chunk,Left,Right;public int RightContext; }
@@ -75,6 +78,9 @@ internal sealed class NativeRecognizer : IDisposable
     [DllImport("nemo_speech_asr_c",CallingConvention=CallingConvention.Cdecl)] private static extern nint nemo_speech_asr_result_transcript(nint result,nuint alternative);
     [DllImport("nemo_speech_asr_c",CallingConvention=CallingConvention.Cdecl)] private static extern byte nemo_speech_asr_result_is_final(nint result);
     [DllImport("nemo_speech_asr_c",CallingConvention=CallingConvention.Cdecl)] private static extern nuint nemo_speech_asr_result_language_count(nint result,nuint alternative);
+    [DllImport("nemo_speech_asr_c",CallingConvention=CallingConvention.Cdecl)] private static extern nuint nemo_speech_asr_result_word_count(nint result,nuint alternative);
+    [DllImport("nemo_speech_asr_c",CallingConvention=CallingConvention.Cdecl)] private static extern int nemo_speech_asr_result_word_start_time(nint result,nuint alternative,nuint index);
+    [DllImport("nemo_speech_asr_c",CallingConvention=CallingConvention.Cdecl)] private static extern int nemo_speech_asr_result_word_end_time(nint result,nuint alternative,nuint index);
     [DllImport("nemo_speech_asr_c",CallingConvention=CallingConvention.Cdecl)] private static extern nint nemo_speech_asr_result_language_code(nint result,nuint alternative,nuint index);
     [DllImport("nemo_speech_asr_c",CallingConvention=CallingConvention.Cdecl)] private static extern void nemo_speech_asr_result_destroy(nint result);
     [DllImport("nemo_speech_asr_c",CallingConvention=CallingConvention.Cdecl)] private static extern nint nemo_speech_asr_last_error();

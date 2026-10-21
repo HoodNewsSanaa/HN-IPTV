@@ -71,6 +71,7 @@ internal sealed class PlaybackController
         _playing = false;
     }
     public Task PauseAsync() => RunAsync(() => { if (_handle != IntPtr.Zero) { _paused = !_paused; Set("pause", _paused ? "yes" : "no"); } });
+    internal Task TranslationBufferAsync(bool enabled)=>RunAsync(()=>{if(_handle!=IntPtr.Zero)Set("demuxer-lavf-o",enabled?"live_start_index=0":"");});
     public Task CaptionsAsync(bool enabled, CancellationToken ct = default) => RunAsync(() => {
         if (_handle != IntPtr.Zero) {
             if (enabled) Set("sid", "auto");

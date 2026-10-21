@@ -1,4 +1,4 @@
-# HN-IPTV Feature Rich preview — 0.13.0
+# HN-IPTV Feature Rich preview — 0.13.1
 
 Branch: `HN-IPTV-Feature-Rich`.
 
@@ -15,6 +15,18 @@ The native Windows runtime replaces Python, PyTorch, Whisper, Argos, OPUS and Ea
 Fresh audio is sent about every 320 ms. The native stream retains acoustic context, so old audio is not repeatedly decoded. Recognition and Azure translation run independently with bounded queues. Stable phrases become compact pop-on cues; unfinished trailing word fragments are withheld. Captions still rise above fullscreen controls.
 
 Screen-text OCR translation has been retired as part of removing the old local language stack. Channel-provided CC remains available.
+
+## Generous time
+
+Click Translate speech and choose Live, Generous time — 10 seconds, or Generous time — 15 seconds (recommended). The choice is also in Translation settings.
+
+Generous time uses one incoming media feed. It extracts recognition audio ahead of playback, translates roughly eight-second dialogue groups through Azure, and delays original video and audio together. Captions use Nemotron's source word timestamps and the player's media clock. Translated paragraphs are split into compact cues proportionally across their source speech interval; this is phrase-level synchronization, not exact translated-word alignment.
+
+The rolling playlist exposes media only after its lead time and completed translation. If processing falls behind, playback waits/refills rather than showing late captions. Source/network latency, segment boundaries and translation delays can make the actual delay longer than the selected 10 or 15 seconds. Azure failures stop buffered translation and return to live playback with an error.
+
+The optional FFmpeg 9.0.2 media transport downloads once (115 MB compressed), separately from the installer and language model. It copies original video/audio codecs into short local segments and decodes a separate audio output for recognition. It does not add another language model. mpv builds support this mode; Live remains available in comparison builds.
+
+Temporary media is limited to 512 MB per session and a bounded rolling window. Stop, channel changes and disabling translation remove session files. Known abandoned sessions are removed on next buffered use. A long pause can outlive the rolling window and require rebuilding the buffer. Captions follow the paused media clock and avoid the fullscreen controls.
 
 ## Upgrade and cleanup
 

@@ -87,7 +87,7 @@ internal static class LocalTranslationRuntime
     }
 }
 
-internal sealed record RecognitionText(string Text,string Language,bool Final);
+internal sealed record RecognitionText(string Text,string Language,bool Final,double StartSeconds,double EndSeconds);
 internal sealed class LocalTranslationWorker:IAsyncDisposable
 {
     private readonly Process _process;private readonly Task _errors;private readonly SemaphoreSlim _gate=new(1,1);
@@ -122,7 +122,7 @@ internal sealed class LocalTranslationWorker:IAsyncDisposable
             string response=await _process.StandardOutput.ReadLineAsync(ct).AsTask().WaitAsync(TimeSpan.FromSeconds(30),ct)??throw new IOException("Nemotron stopped.");
             using var doc=JsonDocument.Parse(response);var root=doc.RootElement;
             if(root.GetProperty("id").GetInt64()!=id||root.TryGetProperty("error",out _))throw new IOException("Nemotron recognition failed. Prepare the model or choose CPU.");
-            return root.GetProperty("results").EnumerateArray().Select(x=>new RecognitionText(x.GetProperty("Text").GetString()??"",x.GetProperty("Language").GetString()??"auto",x.GetProperty("Final").GetBoolean())).ToArray();
+            return root.GetProperty("results").EnumerateArray().Select(x=>new RecognitionText(x.GetProperty("Text").GetString()??"",x.GetProperty("Language").GetString()??"auto",x.GetProperty("Final").GetBoolean(),x.GetProperty("StartSeconds").GetDouble(),x.GetProperty("EndSeconds").GetDouble())).ToArray();
         }catch{_faulted=true;throw;}finally{_gate.Release();}
     }
     public async ValueTask DisposeAsync(){try{if(!_process.HasExited)_process.Kill(true);}catch{}try{await _process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));await _errors;}catch{}_process.Dispose();}

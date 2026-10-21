@@ -756,6 +756,7 @@ public partial class MainWindow : Window
         try
         {
             _tuneGeneration++;
+            await StopTranslationSessionAsync();
             _playingChannel = channel; _tuneWatch = Stopwatch.StartNew(); _tuneSubmitted = false;
             _streamInfo = StreamInfo.Empty; RenderStreamInfo();
             _infoTimer.Interval = TimeSpan.FromMilliseconds(200); _infoTimer.Start();
@@ -770,6 +771,7 @@ public partial class MainWindow : Window
             if (cts.IsCancellationRequested) return;
             if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
                 throw new InvalidOperationException("The source did not provide a valid stream URL.");
+            _playingStreamUri = uri;
             using var timing = App.Measure("playback.tune_request");
 #if USE_MPV
             await _playback.CaptionsAsync(_playerSettings.CaptionsEnabled, cts.Token);
@@ -912,6 +914,7 @@ public partial class MainWindow : Window
             if (info.State == "Paused") _progressAge.Restart();
             if (!_userPaused && info.PositionMilliseconds > 0 && info.PositionMilliseconds != _lastProgress)
             { _lastProgress = info.PositionMilliseconds; _progressAge.Restart(); }
+            else if (!_userPaused && _bufferedTranslation != null) { SetStatus("Waiting for the translated buffer..."); _progressAge.Restart(); }
             else if (!_userPaused && _progressAge.Elapsed > TimeSpan.FromSeconds(20)) _ = RecoverPlaybackAsync();
             _pip?.SetAspect(info.AspectRatio);
             if (StreamInfoPanel.Visibility == Visibility.Visible) RenderStreamInfo();

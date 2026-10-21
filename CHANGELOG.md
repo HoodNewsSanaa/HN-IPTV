@@ -1,3 +1,14 @@
+# 0.13.1 Feature Rich preview
+
+- Offer Live, Generous time (10 seconds), and Generous time (15 seconds, recommended) when enabling Translate. Remember the timing choice.
+- Keep Nemotron recognition and Azure text translation. Generous time recognizes ahead of playback and translates roughly eight-second dialogue groups for more context.
+- Preserve source word timestamps and display compact cues against the media playback clock, including while paused.
+- Use one upstream stream to produce both recognition audio and a local rolling audio/video buffer. Delay both original audio and video together.
+- Expose buffered media only after the chosen lead time and successful translation; refill naturally when processing falls behind.
+- Download the checksum-pinned FFmpeg media transport once (115 MB). Bound active temporary media to 512 MB, clean it on stop and clean abandoned owned sessions on next use.
+- Clear buffers/captions on channel changes and cancellation; return to live playback when translation is disabled or fails.
+- Validate native media timestamps with a generated color/tone fixture, translation gating, paused captions, cancellation and real Nemotron word timestamps.
+
 # 0.13.0 Feature Rich preview
 
 - Replace the local language stack with Nemotron 3.5 ASR Streaming Q8 → Azure Translator → timed captions.
