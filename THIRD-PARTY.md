@@ -22,3 +22,11 @@ The standard mpv build includes the unmodified libmpv-2.dll pinned by mpv-build.
 - HN-IPTV application and embedding source: https://github.com/HoodNewsSanaa/HN-IPTV
 
 The bootstrap manifest records exact archive and DLL hashes. Native libraries remain separate and replaceable. Application source and build scripts are available in the linked HN-IPTV repository.
+
+## Optional translation models in Feature Rich 0.12
+
+The separately downloaded OPUS pack is derived from [Helsinki-NLP/opus-mt-ar-en](https://huggingface.co/Helsinki-NLP/opus-mt-ar-en), revision `c5b2a50db78d6be98ae207223f8d4f63bc7a0ff1`, under Apache-2.0. The archive includes the upstream model card, Apache license, NOTICE, source/target SentencePiece models and conversion metadata. Model weights are converted to CTranslate2 float16; inference uses CPU float32 or CUDA float16.
+
+Optional multilingual turbo recognition uses [mobiuslabsgmbh/faster-whisper-large-v3-turbo](https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo), a CTranslate2 conversion of OpenAI Whisper large-v3-turbo (MIT). Silero VAD is bundled by faster-whisper; its upstream attribution remains in that dependency. No Transformers package is installed in the app runtime.
+
+The public benchmark uses [Google FLEURS](https://huggingface.co/datasets/google/fleurs) Arabic test recordings (CC-BY-4.0) and [OPUS-100](https://huggingface.co/datasets/Helsinki-NLP/opus-100) Arabic-English test text. These fixtures are evaluation data and are not packaged in the installer. See TRANSLATION-BENCHMARKS.md for scope, metrics and limitations.

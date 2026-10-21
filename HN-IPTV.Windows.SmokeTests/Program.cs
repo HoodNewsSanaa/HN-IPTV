@@ -362,18 +362,24 @@ internal static class Program
                 for (int pass = 0; pass < 3; pass++) {
                     Invoke(window, "ToggleFullscreen");
                     var overlay = new TranslationOverlay(() => (window, host));
-                    overlay.SetScreen("Translated screen text in fullscreen");
+                    overlay.SetScreenRegions(new[] { new HnIptv.Translation.ScreenTranslationRegion(
+                        0.15, 0.7, 0.5, 0.1, "Translated headline at its original position", "#203040", "#FFFFFF") }, 1920, 1080, "en");
+                    if (overlay.PositionedRegionCount != 1) throw new InvalidOperationException("Positioned translation was not drawn.");
+                    if (Math.Abs(overlay.Width-host.ActualWidth)>2 || Math.Abs(overlay.Height-host.ActualHeight)>2)
+                        throw new InvalidOperationException("Positioned overlay does not follow the video viewport.");
                     overlay.SetSpeech("Continuous speech caption");
                     overlay.SetSpeech(""); // A silent chunk must preserve the previous caption.
                     await UntilAsync(() => Task.FromResult(overlay.IsVisible));
                     window.Activate();
                     Invoke(window, "ToggleFullscreen");
-                    overlay.SetScreen("Translated screen text after fullscreen");
+                    overlay.SetScreenRegions(new[] { new HnIptv.Translation.ScreenTranslationRegion(
+                        0.15, 0.7, 0.5, 0.1, "Translated headline after fullscreen") }, 1920, 1080, "en");
                     overlay.Close();
                     overlay.SetSpeech("Late cancelled result");
                     await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
                 }
                 results["translation_fullscreen_lifecycle"] = true;
+                results["positioned_translation_viewport"] = true;
                 IntPtr pixelFixture = Marshal.AllocHGlobal(16);
                 try {
                     Marshal.Copy(new byte[] { 1,2,3,255, 4,5,6,255, 7,8,9,255, 10,11,12,255 }, 0, pixelFixture, 16);

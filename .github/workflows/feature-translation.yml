@@ -16,7 +16,7 @@ concurrency:
 jobs:
   offline-models:
     runs-on: windows-latest
-    timeout-minutes: 40
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -33,7 +33,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: artifacts/local-runtime-data
-          key: feature-private-runtime-tiny-en-es-v2
+          key: feature-private-runtime-tiny-en-es-ar-opus-v3
           restore-keys: feature-private-runtime-tiny-en-es-
       - name: Run the actual in-app private runtime and model setup
         run: dotnet run --project tests/TranslationRuntimeHarness -c Release -- artifacts/publish/HN-IPTV.dll artifacts/local-runtime-data artifacts/runtime-paths.json

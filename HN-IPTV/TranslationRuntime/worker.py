@@ -125,6 +125,71 @@ class BPETokenizer:
         return self.detokenizer.detokenize(" ".join(tokens).replace("@@ ", "").split(" "))
 
 
+
+VAD_PARAMETERS = dict(threshold=0.45, min_speech_duration_ms=150,
+    min_silence_duration_ms=250, speech_pad_ms=150)
+
+def speech_repository(size):
+    return "mobiuslabsgmbh/faster-whisper-large-v3-turbo" if size == "turbo" else "Systran/faster-whisper-" + size
+
+def suppress_noise(signal):
+    """Conservative optional spectral suppression; never attenuate by more than 6 dB."""
+    import numpy as np
+    from scipy.signal import stft, istft
+    if len(signal) < 512:
+        return signal
+    _, _, spectrum = stft(signal, 16000, nperseg=512, noverlap=384)
+    power = np.abs(spectrum)**2
+    floor = np.percentile(power, 15, axis=1, keepdims=True)
+    gain = np.sqrt(np.clip(1 - floor / (power + 1e-10), 0.25, 1))
+    _, cleaned = istft(spectrum * gain, 16000, nperseg=512, noverlap=384)
+    return cleaned[:len(signal)].astype(np.float32)
+
+class MarianTokenizer:
+    translation_options = dict(beam_size=3, length_penalty=1, replace_unknowns=False, max_decoding_length=160)
+    def __init__(self, folder):
+        import sentencepiece
+        self.source = sentencepiece.SentencePieceProcessor(model_file=str(folder / "source.spm"))
+        self.target = sentencepiece.SentencePieceProcessor(model_file=str(folder / "target.spm"))
+    def encode(self, text, out_type=str):
+        return self.source.encode(text, out_type=str)[:255] + ["</s>"]
+    def decode(self, tokens):
+        return self.target.decode(tokens)
+
+# This checksum is pinned after the release pack's offline CPU validation.
+OPUS_SHA256 = "3dc65d3ee89b5cfd26d9dfd07bd0b72f4eea956ddba495e9efa3f6ad1d14fbe3"
+OPUS_URL = "https://github.com/HoodNewsSanaa/HN-IPTV/releases/download/translation-models-v1/opus-ar-en-ct2-f16.zip"
+
+def install_opus(root):
+    import shutil
+    destination = root / "text" / "opus-ar-en-v1"
+    if all((destination / name).is_file() for name in ("model/model.bin", "model/config.json", "source.spm", "target.spm", "metadata.json")):
+        print("Reusing cached OPUS-MT Arabic to English.", flush=True)
+        return
+    archive = root / "downloads" / "opus-ar-en-ct2-f16.zip"
+    print("Preparing compact OPUS-MT Arabic to English...", flush=True)
+    download(OPUS_URL, archive)
+    with archive.open("rb") as stream:
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    if digest != OPUS_SHA256:
+        archive.unlink(missing_ok=True)
+        raise ValueError("OPUS model checksum did not match the pinned release")
+    staging = destination.with_name(destination.name + ".partial")
+    if staging.exists(): shutil.rmtree(staging)
+    try:
+        safe_extract(archive, staging)
+        meta = json.loads((staging / "metadata.json").read_text("utf-8"))
+        if meta.get("type") != "marian" or meta.get("source") != "ar" or meta.get("target") != "en":
+            raise ValueError("Invalid OPUS model metadata")
+        import ctranslate2
+        ctranslate2.Translator(str(staging / "model"), device="cpu", compute_type="float32")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists(): shutil.rmtree(destination)
+        staging.replace(destination)
+    finally:
+        archive.unlink(missing_ok=True)
+        if staging.exists(): shutil.rmtree(staging)
+
 _DLL_HANDLES = []
 def select_device(requested):
     if requested == "cpu":
@@ -146,15 +211,17 @@ def select_device(requested):
     except (ImportError, RuntimeError, OSError):
         return "cpu", "CUDA could not load; using CPU. Prepare CUDA in Translation settings."
 
-def setup(root, source_codes, target, size, speech_only=False, device="cpu"):
+def setup(root, source_codes, target, size, speech_only=False, device="cpu", text_model="auto"):
     from faster_whisper import WhisperModel
     from huggingface_hub import snapshot_download
     root.mkdir(parents=True, exist_ok=True)
-    os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
-    print("Preparing multilingual speech model...", flush=True)
+    os.environ.update(HF_HUB_DISABLE_TELEMETRY="1", HF_HUB_DISABLE_XET="1", HF_HUB_DISABLE_PROGRESS_BARS="1")
+    selected, notice = select_device(device)
+    size = ("turbo" if selected == "cuda" else "small") if size == "auto" else size
+    print("Preparing multilingual speech model: " + size, flush=True)
     model_dir = root / "speech" / size
     if not (model_dir / "model.bin").exists():
-        snapshot_download("Systran/faster-whisper-" + size, local_dir=str(model_dir),
+        snapshot_download(speech_repository(size), local_dir=str(model_dir),
                           allow_patterns=["*.bin", "*.json", "*.txt"])
     # Verify locally, and exercise CUDA/cuDNN with a short inference when selected.
     selected, notice = select_device(device)
@@ -208,6 +275,9 @@ def setup(root, source_codes, target, size, speech_only=False, device="cpu"):
                 if target != "en":
                     pairs.add(("en", target))
         for source, dest in sorted(pairs):
+            if text_model == "auto" and (source, dest) == ("ar", "en"):
+                install_opus(root)
+                continue
             pair_dir = root / "translate" / (source + "_" + dest)
             if package_folder(pair_dir) is not None:
                 continue
@@ -236,24 +306,45 @@ def setup(root, source_codes, target, size, speech_only=False, device="cpu"):
     print("Local translation models are ready.", flush=True)
 
 
-def ocr_lines(rows, source):
-    """Join words on the same baseline; Arabic-family text reads right to left."""
+def ocr_regions(rows, source):
+    """Keep line geometry, reading order, and separate distant columns."""
     lines = []
     for box, text, confidence in sorted(rows, key=lambda row: min(p[1] for p in row[0])):
-        x0, x1 = min(p[0] for p in box), max(p[0] for p in box)
-        y0, y1 = min(p[1] for p in box), max(p[1] for p in box)
-        center, height = (y0 + y1) / 2, max(1, y1 - y0)
-        line = next((r for r in reversed(lines) if abs(r["y"] - center) <= max(r["height"], height) * 0.55), None)
+        x0, x1 = float(min(p[0] for p in box)), float(max(p[0] for p in box))
+        y0, y1 = float(min(p[1] for p in box)), float(max(p[1] for p in box))
+        center, height = (y0+y1)/2, max(1,y1-y0)
+        line = next((r for r in reversed(lines)
+            if abs(r["y"]-center) <= max(r["height"],height)*0.55
+            and min(max(0,x0-word[1],word[0]-x1) for word in r["words"]) <= max(24,height*3.5)), None)
         if line is None:
-            line = {"y": center, "height": height, "words": []}
+            line = {"y":center,"height":height,"words":[],"top":y0,"bottom":y1,"confidence":float(confidence)}
             lines.append(line)
-        line["words"].append((x0, x1, text))
+        line["words"].append((x0,x1,text))
+        line["top"], line["bottom"] = min(line["top"],y0), max(line["bottom"],y1)
+        line["confidence"] = min(line["confidence"],float(confidence))
     output = []
-    for line in sorted(lines, key=lambda r: r["y"]):
-        rtl = source in ("ar", "fa", "ur", "he") or any(re.search(r"[\u0590-\u08ff]", word[2]) for word in line["words"])
-        words = sorted(line["words"], key=lambda item: item[0], reverse=rtl)
-        output.append(" ".join(word[2] for word in words))
+    for line in sorted(lines,key=lambda r:r["y"]):
+        rtl = source in ("ar","fa","ur","he") or any(re.search(r"[\u0590-\u08ff]",w[2]) for w in line["words"])
+        words = sorted(line["words"],key=lambda w:w[0],reverse=rtl)
+        output.append({"text":" ".join(w[2] for w in words),
+            "box":(min(w[0] for w in words),line["top"],max(w[1] for w in words),line["bottom"]),
+            "confidence":line["confidence"]})
     return output
+
+def ocr_lines(rows, source):
+    return [r["text"] for r in ocr_regions(rows,source)]
+
+def region_style(image, rectangle):
+    """A sampled opaque background covers the source lettering without another model."""
+    import numpy as np
+    patch = np.asarray(image.crop(rectangle).resize((64,24)),dtype=np.uint8).reshape(-1,3)
+    bins = patch.astype(np.int32)//16
+    codes = bins[:,0]*256+bins[:,1]*16+bins[:,2]
+    dominant = int(np.bincount(codes,minlength=4096).argmax())
+    rgb = np.median(patch[codes==dominant],axis=0).astype(int)
+    background = "#"+"".join(f"{int(value):02X}" for value in rgb)
+    luminance = float(rgb @ np.asarray([0.2126,0.7152,0.0722]))
+    return background, "#101010" if luminance>145 else "#FFFFFF"
 
 def word_key(word):
     return re.sub(r"[^\w]", "", word.casefold())
@@ -266,10 +357,12 @@ def speech_delta(previous, current):
     return current
 
 class Engine:
-    def __init__(self, root, size, device="cpu"):
+    def __init__(self, root, size, device="cpu", text_model="auto", pipeline="auto", noise=False):
         self.root = Path(root)
         self.device, self.notice = select_device(device)
-        self.size = size
+        self.size = self.requested_size = size
+        self.text_model, self.pipeline, self.noise = text_model, pipeline, noise
+        self.language_until = 0
         self.speech = None
         self.readers = OrderedDict()
         self.translators = OrderedDict()
@@ -288,6 +381,7 @@ class Engine:
             self.device = "cpu"
             self.notice = "CUDA failed or ran out of memory; translation continued on CPU."
             self.speech = None
+            self.size = self.requested_size
             self.readers.clear()
             self.translators.clear()
             self.screen_snapshot = None
@@ -311,7 +405,18 @@ class Engine:
         import ctranslate2
         import sentencepiece
         directory = self.root / "translate" / key
+        opus = self.root / "text" / "opus-ar-en-v1"
+        if self.text_model == "auto" and key == "ar_en" and (opus / "model/model.bin").is_file():
+            tokenizer = MarianTokenizer(opus)
+            translator = ctranslate2.Translator(str(opus / "model"), device=self.device,
+                compute_type="float16" if self.device == "cuda" else "float32", inter_threads=1, intra_threads=2)
+            result = (tokenizer, translator, "")
+            self.translators[key] = result
+            while len(self.translators) > 3: self.translators.popitem(last=False)
+            return result
         folder = package_folder(directory)
+        if folder is not None and self.text_model == "auto" and key == "ar_en":
+            self.notice = "Using cached Argos Arabic to English. Prepare models to enable the benchmark-selected OPUS pack."
         if folder is None:
             raise ValueError("Install the local language pack for " + source + " to " + target + " in Translation settings.")
         meta = json.loads((folder / "metadata.json").read_text("utf-8"))
@@ -342,9 +447,11 @@ class Engine:
                 return self.translate(self.translate(text, source, "en"), "en", target)
             raise
         tokens = tokenizer.encode(text[:3000], out_type=str)
-        translated = model.translate_batch([tokens], beam_size=4, length_penalty=0.2,
-            replace_unknowns=True, target_prefix=[[prefix]] if prefix else None,
-            no_repeat_ngram_size=3, max_decoding_length=min(512, max(32, len(tokens) * 4)))[0].hypotheses[0]
+        options = dict(beam_size=4, length_penalty=0.2, replace_unknowns=True,
+            target_prefix=[[prefix]] if prefix else None, no_repeat_ngram_size=3,
+            max_decoding_length=min(512, max(32, len(tokens) * 4)))
+        options.update(getattr(tokenizer, "translation_options", {}))
+        translated = model.translate_batch([tokens], **options)[0].hypotheses[0]
         result = tokenizer.decode(translated).strip()
         if prefix and result.startswith(prefix):
             result = result[len(prefix):].strip()
@@ -357,6 +464,11 @@ class Engine:
     def ensure_speech(self):
         from faster_whisper import WhisperModel
         if self.speech is None:
+            if self.size == "auto":
+                choices = ("turbo", "medium", "small", "base", "tiny") if self.device == "cuda" else ("small", "base", "tiny", "turbo", "medium")
+                self.size = next((x for x in choices if (self.root / "speech" / x / "model.bin").is_file()), choices[0])
+            if not (self.root / "speech" / self.size / "model.bin").is_file():
+                raise ValueError("Prepare the " + self.size + " speech model in Translation settings.")
             self.speech = WhisperModel(str(self.root / "speech" / self.size), device=self.device,
                 compute_type="int8_float16" if self.device == "cuda" else "int8", cpu_threads=max(1, min(4, (os.cpu_count() or 2) // 2)),
                 num_workers=1, local_files_only=True)
@@ -373,6 +485,10 @@ class Engine:
         self.readers.move_to_end(group)
         return self.readers[group]
 
+    def uses_staged(self, source, target):
+        return (self.size == "turbo" or self.pipeline == "staged" or target != "en"
+            or (self.pipeline == "auto" and (source == "ar" or "ar" in self.ready.get("inputs", []))))
+
     def prepare(self, kind, source, target):
         def load():
             if kind == "audio":
@@ -381,6 +497,17 @@ class Engine:
                 segments, _ = self.speech.transcribe(np.zeros(16000, dtype=np.float32),
                     language="en", beam_size=1, vad_filter=False)
                 list(segments)  # Initialize feature extraction and CUDA before capturing live audio.
+                from faster_whisper.vad import get_speech_timestamps, VadOptions
+                get_speech_timestamps(np.zeros(16000, dtype=np.float32), VadOptions(**VAD_PARAMETERS))
+                if self.uses_staged(source, target):
+                    inputs = [source] if source != "auto" else self.ready.get("inputs", [])
+                    for code in inputs:
+                        if code == target: continue
+                        try:
+                            self.pair(code, target)
+                        except ValueError:
+                            if code == "en" or target == "en": raise
+                            self.pair(code, "en"); self.pair("en", target)
             else:
                 import numpy as np
                 groups = [ocr_group(source)] if source != "auto" else self.ready.get("ocr_groups", [])
@@ -394,10 +521,10 @@ class Engine:
             return {"text": "", "source": source, "target": target}
         return self.execute(load)
 
-    def audio(self, payload, source, target):
-        return self.execute(lambda: self._audio(payload, source, target))
+    def audio(self, payload, source, target, context_seconds=0):
+        return self.execute(lambda: self._audio(payload, source, target, context_seconds))
 
-    def _audio(self, payload, source, target):
+    def _audio(self, payload, source, target, context_seconds=0):
         from faster_whisper import WhisperModel
         import numpy as np
         import wave
@@ -409,20 +536,36 @@ class Engine:
         if len(signal) == 0 or float(np.sqrt(np.mean(signal**2))) < 0.002:
             return {"text": "", "source": source, "target": target}
         signal = np.interp(np.arange(0, len(signal), 44100 / 16000), np.arange(len(signal)), signal).astype(np.float32)
-        segments, info = self.speech.transcribe(signal, language=None if source == "auto" else source,
-            task="translate" if target == "en" else "transcribe",
-            beam_size=3 if self.device == "cuda" else 2, condition_on_previous_text=False, vad_filter=False,
+        from faster_whisper.vad import get_speech_timestamps, VadOptions
+        if self.noise:
+            signal = suppress_noise(signal)
+        if context_seconds > 0:
+            fresh = signal[min(len(signal), int(context_seconds * 16000)):]
+            if len(fresh) < 512 or not get_speech_timestamps(fresh, VadOptions(**VAD_PARAMETERS)):
+                return {"text": "", "source": self.last_language or source, "target": target}
+        # Analyze short live windows before decoding; music/silence should not create captions.
+        spans = get_speech_timestamps(signal, VadOptions(**VAD_PARAMETERS))
+        if not spans or spans[-1]["end"] <= max(0, context_seconds) * 16000:
+            return {"text": "", "source": self.last_language or source, "target": target}
+        # Preserve timing inside a phrase while trimming leading/trailing non-speech.
+        signal = signal[spans[0]["start"]:spans[-1]["end"]]
+        staged = self.uses_staged(source, target)
+        language = source if source != "auto" else (self.last_language if time.monotonic() < self.language_until else None)
+        segments, info = self.speech.transcribe(signal, language=language,
+            task="transcribe" if staged else "translate",
+            beam_size=2, condition_on_previous_text=False, vad_filter=False,
             no_speech_threshold=0.65, temperature=0)
-        text = " ".join(s.text.strip() for s in segments if s.no_speech_prob < 0.65).strip()
+        text = " ".join(s.text.strip() for s in segments
+            if not (s.no_speech_prob > 0.65 or s.avg_logprob < -1.2 or s.compression_ratio > 2.4)).strip()
         detected = normalize(info.language)
-        self.last_language = detected
-        if target != "en":
-            text = self.translate(text, detected, target)
-        # Punctuation can change between overlapping windows. Keep captions continuous.
-        delta = speech_delta(self.last_speech, text)
         if text:
-            self.last_speech = text
-        return {"text": delta, "source": detected, "target": target}
+            self.last_language = detected
+            if language is None and getattr(info, "language_probability", 0) >= 0.8:
+                self.language_until = time.monotonic() + 15
+        if staged:
+            text = self.translate(text, detected, target)
+        # Replace the rolling caption so revised translations never append duplicate phrases.
+        return {"text": text, "source": detected, "target": target, "replace_speech": True}
 
     def screen(self, payload, source, target):
         return self.execute(lambda: self._screen(payload, source, target))
@@ -464,10 +607,11 @@ class Engine:
             score = sum(min(len(text), 40) * conf for _, text, conf in good)
             if score > best_score:
                 best, best_score = good, score
-        lines = ocr_lines(best, source)
-        translated, detected = [], source
+        lines = ocr_regions(best, source)
+        translated, regions, detected = [], [], source
         installed_inputs = self.ready.get("inputs", [])
-        for line in lines[:16]:
+        for observation in lines[:32]:
+            line = observation["text"]
             if source == "auto":
                 try:
                     detected = normalize(detect(line))
@@ -482,8 +626,20 @@ class Engine:
                 detected = "en"
             if detected == target:
                 continue
-            translated.append(self.translate(line[:1000], detected, target))
-        result = {"text": "\n".join(translated[-6:])[:1500], "source": detected, "target": target}
+            replacement = self.translate(line[:1000],detected,target)
+            if not replacement.strip():
+                continue
+            translated.append(replacement)
+            left,top,right,bottom = observation["box"]
+            padding = max(2,(bottom-top)*0.08)
+            rectangle = (max(0,int(left-padding)),max(0,int(top-padding)),
+                min(image.width,int(right+padding+1)),min(image.height,int(bottom+padding+1)))
+            background,foreground = region_style(image,rectangle)
+            regions.append({"x":rectangle[0]/image.width,"y":rectangle[1]/image.height,
+                "width":(rectangle[2]-rectangle[0])/image.width,"height":(rectangle[3]-rectangle[1])/image.height,
+                "text":replacement[:2000],"background":background,"foreground":foreground})
+        result = {"text": "\n".join(translated[-6:])[:1500], "source": detected, "target": target,
+            "regions": regions, "frame_width": image.width, "frame_height": image.height}
         patches = []
         for box, _, _ in best:
             rectangle = (max(0, int(min(p[0] for p in box))), max(0, int(min(p[1] for p in box))),
@@ -492,9 +648,9 @@ class Engine:
         self.screen_snapshot = {"key": key, "at": time.monotonic(), "patches": patches, "result": dict(result)}
         return result
 
-def run(root, size, device="auto"):
+def run(root, size, device="auto", text_model="auto", pipeline="auto", noise=False):
     block_network()
-    engine = Engine(root, size, device)
+    engine = Engine(root, size, device, text_model, pipeline, noise)
     # Stdout is only the protocol. Third-party diagnostic output goes to stderr.
     protocol = sys.stdout
     sys.stdout = sys.stderr
@@ -513,7 +669,7 @@ def run(root, size, device="auto"):
                 if kind.startswith("prepare_"):
                     result = engine.prepare(kind.removeprefix("prepare_"), source, target)
                 elif kind == "audio":
-                    result = engine.audio(payload, source, target)
+                    result = engine.audio(payload, source, target, min(20, max(0, float(request.get("context_seconds", 0)))))
                 elif kind == "screen":
                     result = engine.screen(payload, source, target)
                 else:
@@ -528,8 +684,11 @@ def run(root, size, device="auto"):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--models", required=True)
-    parser.add_argument("--size", choices=["tiny", "base", "small", "medium"], default="base")
+    parser.add_argument("--size", choices=["auto", "tiny", "base", "small", "medium", "turbo"], default="auto")
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
+    parser.add_argument("--text-model", choices=["auto", "argos"], default="auto")
+    parser.add_argument("--pipeline", choices=["auto", "direct", "staged"], default="auto")
+    parser.add_argument("--noise", action="store_true")
     parser.add_argument("--setup", action="store_true")
     parser.add_argument("--speech-only", action="store_true")
     parser.add_argument("--inputs", default="en,es,fr,de,pt,it")
@@ -538,6 +697,6 @@ if __name__ == "__main__":
     root = Path(args.models)
     if args.setup:
         setup(root, [x.strip() for x in args.inputs.split(",") if re.fullmatch(r"[a-z]{2,3}", x.strip())],
-              args.target, args.size, args.speech_only, args.device)
+              args.target, args.size, args.speech_only, args.device, args.text_model)
     else:
-        run(root, args.size, args.device)
+        run(root, args.size, args.device, args.text_model, args.pipeline, args.noise)

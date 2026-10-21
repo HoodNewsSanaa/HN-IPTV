@@ -1,3 +1,13 @@
+# 0.12.0 Feature Rich preview
+
+- Translate visible text at its original position, with fitted lettering, sampled background masks, tracked regions and separate speech captions. Keep the caption-bar option.
+- Add the benchmark-selected compact OPUS-MT Arabic-to-English text pack with pinned checksum and standalone tokenizers. Keep Argos for other pairs and as a manual option.
+- Add multilingual turbo recognition with a separate local text translator, automatic/manual speech model and pipeline selection, and existing CUDA/CPU fallback.
+- Gate speech decoding with Silero VAD, reject unreliable segments, and offer optional conservative noise suppression. Capture remains restricted to this app.
+- Retain only the newest queued speech segment, discard stale audio, and preserve rolling context for recognition.
+- Preserve existing manual settings, cached models, CUDA libraries and the stable installation identity.
+- Include reproducible Arabic recognition, noisy-audio and text-translation comparisons in TRANSLATION-BENCHMARKS.md.
+
 # 0.11.4 Feature Rich preview
 
 - Fix Arabic and other right-to-left OCR reading order; preserve small text at up to 1080p and handle bottom-up video frames.

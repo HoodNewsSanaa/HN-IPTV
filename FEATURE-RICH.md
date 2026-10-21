@@ -1,62 +1,59 @@
-# HN-IPTV Feature Rich preview
+# HN-IPTV Feature Rich preview — 0.12.0
 
-Branch: `HN-IPTV-Feature-Rich`. This preview adds local translation and fullscreen focus fixes. It remains separate from stable main.
+Branch: `HN-IPTV-Feature-Rich`. Stable main remains separate.
 
-## Installation
+## Installation and updates
 
-Download the Windows artifact from this branch's **Windows builds and releases** run and run `HN-IPTV-Setup.exe` over the existing installation. Do not uninstall first. AppId, current-user scope, application mutex, previous install directory and LocalAppData/HN-IPTV data paths are preserved. Installer regressions include cached model and language-setting sentinels.
+Run the new HN-IPTV-Setup.exe over the existing installation. Do not uninstall first. The AppId, per-user install location, mutex and LocalAppData/HN-IPTV data directory are preserved. Settings, playlists, cached models and CUDA libraries survive upgrades. Portable updates preserve their data directory.
 
-The portable ZIP keeps models in its existing data/translation folder. Updates preserve that folder. The installer contains integration code and setup scripts; the optional inference runtime and models download separately once.
+Feature builds use the `feature-rich-v*` prerelease update channel. Optional `translation-models-v*` releases are model assets and are never selected as application updates. Publication requires native playback/fullscreen/PiP/installer checks and real offline model inference for the same source commit.
 
-## Translation
+## Recommended translation setup
 
-Use **Translation settings** to select Input and Output languages. Input Auto detects speech and text; Output Auto uses the Windows display language. Manual language codes override either selection and are saved.
+Open **Translation settings**, choose the input packs you watch, and select **Download / prepare local models**. Input Auto detects the language; manual input and output codes remain available. Output Auto uses your Windows display language.
 
-Choose input language packs for the content you watch and select Download / prepare local models. Setup downloads a private, checksum-verified Python runtime, CPU inference libraries, a multilingual Whisper speech model, OCR models and translation packs. No system Python installation or account is required. Downloads can total several GB. Existing model files are reused rather than fetched on each launch or app update.
+Speech model **auto** prepares turbo on an available NVIDIA CUDA device, or small on CPU. Turbo transcribes the original speech and then uses a separate translator. For Arabic, Auto also uses separate recognition and translation with older speech models. Direct English translation remains selectable with non-turbo models. Other output languages always require a text translator. The manual tiny/base/small/medium choices remain available; existing saved selections are preserved.
 
-**Translate speech** captures only HN-IPTV's process tree using Windows application loopback (Windows 11 / build 20348+), processes overlapping five-second audio windows, and displays translated captions. It does not capture other apps or the microphone. Silence is skipped. Translations have processing delay and can be inaccurate for music, overlapping speakers, short phrases and accents.
+Auto text translation uses the compact OPUS-MT pack for **Arabic to English**, and Argos for other pairs, with an English pivot when required. The optional OPUS download is approximately **143 MB**, expands to approximately 157 MB, and is checksum verified. It uses existing CTranslate2/SentencePiece dependencies. Argos is also selectable manually. If OPUS has not been prepared, an existing cached Arabic Argos pack remains usable and the app reports that fallback.
 
-**Translate text** reads frames and visible native captions directly from mpv. OCR never captures the desktop or app controls. It scans installed script models and translates recognized text into a separate overlay. Manual input language selects the matching model. Auto text recognition is limited to installed script models. OCR is CPU-based and may take several seconds per scan, especially when several scripts are installed. Small/moving/stylized text is less reliable.
+Selecting Auto does not download models during playback. It selects an already prepared model until you run setup. Turbo model files total approximately 1.62 GB and download once; existing medium/base models are retained. CUDA libraries are reused. A fresh private runtime plus CUDA, recognition and OCR models can still require several GB.
 
-English audio translation uses Whisper directly. Other audio output languages and all OCR translation use installed CTranslate2/SentencePiece language packs, with an English pivot where a direct pair is absent. Unsupported language/tokenizer combinations report an error rather than falling back to a cloud service.
+The [benchmark report](TRANSLATION-BENCHMARKS.md) explains why turbo + VAD and OPUS were selected for the tested Arabic case, and where medium or smaller models remain useful. Turbo is not a promise of universally faster or more accurate captions.
 
-Inference runs in separate hidden workers over local stdin/stdout, with network connections/DNS disabled. No audio or frames are uploaded or stored in diagnostics. Models stay warm while enabled and unload on Stop, tune, settings changes or disabling the feature. Queues retain the newest audio window to prevent unbounded delay. Translation overlays work in normal view, fullscreen and PiP.
+## Spoken dialogue
 
-Process loopback captures rendered audio, so muting/zero volume may produce silence depending on Windows audio behavior. This must be checked on the target device. CPU-only performance is not a universal latency guarantee.
+**Translate speech** captures only this app's process tree using Windows application loopback (Windows 11 / build 20348+). It does not capture the microphone or other apps.
 
-## Fullscreen
+Silero VAD checks fresh audio for speech before recognition. Low-confidence/repetitive recognition segments are suppressed. Auto can retain a confident detected language briefly, with periodic redetection; a manual language is useful for noisy or short clips. Optional **Reduce steady background noise** applies conservative spectral attenuation, off by default because filtering can also damage recognition.
 
-Fullscreen no longer forces always-on-top. Returning from Alt-Tab reveals controls for three seconds and restores keyboard focus. Esc/F work from both the main window and the fullscreen controls. Exiting fullscreen retains the same native video window.
+Captions refresh at phrase boundaries or every 2.5 seconds of continuous audio. Up to 12.5 seconds of preceding audio provides sentence context. A revised rolling translation replaces the previous caption instead of appending duplicate fragments. Empty results preserve readable captions. Only the newest queued segment is retained; stale queued audio is skipped. Caption delay includes collecting audio, model processing and UI scheduling. Simultaneous speakers, accents, music and quiet speech remain difficult.
+
+Process loopback captures rendered audio, so mute/zero volume may produce silence depending on Windows audio behavior.
+
+## Text inside the player
+
+**Translate text** reads frames directly from mpv, including visible native captions. OCR never captures your desktop or app controls.
+
+The default **positioned** overlay keeps OCR coordinates, covers source lettering with sampled background-colored masks, and fits the translated text into that area. It tracks small position changes, tolerates one missed detection, clips to the video viewport, respects letterboxing, and works in normal view, fullscreen and PiP. This is an opaque text replacement overlay, not generative image reconstruction.
+
+Speech captions remain separate and move away from translated bottom banners. Choose **captions** in settings to keep the earlier separate text bar. Auto recognition scans prepared script models; manual input selects a script directly. Tiny, moving, rotated or stylized lettering may be missed. A flat mask cannot perfectly reconstruct a complex moving background.
+
+Text patches are checked independently of the moving video background. Unchanged words reuse cached translations and geometry. Full scans refresh periodically, paused frames remain translatable, and frame capture errors retry.
+
+## Hardware and privacy
+
+Acceleration choices are **auto**, **cuda** and **cpu**. Auto detects NVIDIA hardware during setup and optionally installs official private PyTorch/CUDA libraries. CPU skips that extra download. No system Python, PATH or CUDA Toolkit changes are required.
+
+Speech recognition, OCR and text translation share one hidden worker/CUDA context and warm up before audio capture. CUDA load or memory failures fall back to CPU and show the backend. CPU performance may require a smaller recognition model or disabling simultaneous OCR.
+
+Inference communicates through local stdin/stdout with network connections and DNS blocked. Audio and frames are not uploaded or stored in diagnostics. Only explicit model setup downloads data. Workers unload on Stop, tuning, settings changes or disabling translation.
+
+## Fullscreen and controls
+
+Returning from Alt-Tab reveals fullscreen controls and restores keyboard focus. Esc/F exits fullscreen without replacing the native video window. Overlay callbacks guard against closed windows and reentrant activation, including PiP return. Toggle controls use darker active backgrounds; CC and mute retain explicit labels.
 
 ## Validation
 
-The branch runs the existing package, playback and in-place installation suite plus:
-- Fullscreen deactivation/reactivation and Esc regression.
-- Native video-frame capture and Windows process-loopback activation.
-- Translation settings persistence and old-result invalidation.
-- Worker offline, cache and model-archive safety regressions.
-- A separate real-model CPU test: generated spoken English and rendered screen text translated into Spanish with worker networking blocked.
+The release gates include core/worker regressions, real private-runtime setup, English speech and screen translation into Spanish, the Spanish BPE pack, the new standalone Arabic OPUS pack, staged speech translation, frame geometry and caching, fullscreen/PiP lifecycle, native frame capture and app loopback, portable rollback, and base-to-feature installation/data preservation.
 
-Reports and installable Windows packages are attached as GitHub Actions artifacts. This is an experimental feature build; representative foreign live content and target-device performance still need evaluation.
-
-Feature builds use the separate `feature-rich-v*` prerelease update channel. They do not replace GitHub’s latest stable release or automatically switch to the stable channel. Publication requires both the native installer/playback suite and real offline-model inference checks for the same source commit.
-
-## NVIDIA GPU acceleration
-
-Translation settings now offer `auto`, `cuda` and `cpu`. Preparing models with Auto detects an NVIDIA GPU and installs the official PyTorch 2.8 / CUDA 12.8 runtime privately; CPU mode skips this extra download. CUDA libraries require several additional GB and remain cached. No system Python, PATH or CUDA Toolkit changes are required.
-
-Speech recognition, OCR and text translation use CUDA when available. Startup or inference failures (including GPU memory exhaustion) fall back to CPU and the app reports the active backend. Setup runs a short CUDA speech inference to check the libraries. On an RTX 4050 6 GB, start with `small`; `medium` is available for better recognition at increased memory and processing cost. GPU speed alone cannot improve the translation model itself. Decoding now considers more hypotheses. Explicit input language can help with short, noisy or multilingual clips.
-
-Automated Windows tests exercise real CPU model inference plus CUDA-unavailable and out-of-memory fallback cases. Hosted CI has no NVIDIA GPU, so actual CUDA performance must be checked on GPU hardware.
-
-## Translation performance and reliability in 0.11.4
-
-Speech and screen translation share one worker and CUDA context. Models warm up before audio capture begins; the player shows preparation and errors inside the video overlay, including fullscreen. Audio uses phrase boundaries (at least 1.5 seconds, a short silence, or a 3.5-second maximum) with 0.75 seconds of context and a bounded four-segment queue. Captions keep recent context and empty results do not erase them. Three speech beams on CUDA (two on CPU) balance decoding cost and accuracy; model size still determines much of recognition quality.
-
-Screen capture supports negative stride and retains up to 1920×1080 pixels. OCR joins words into lines, respects right-to-left scripts, and filters already-English station logos when translating foreign content to English. Text patches are checked independently of the moving background; unchanged text reuses its result between full scans. Screen translation remains active on paused video. Capture errors retry rather than silently terminating the loop.
-
-The fullscreen and translation windows guard against reentrant activation and callbacks after closing, including fullscreen exit and PiP return. Toggle controls use a darker background, bright text and border when active; CC and mute also keep explicit on/off labels.
-
-No new runtime dependencies or language-pack downloads are required when upgrading from a prepared 0.11.3 installation.
-
-A local offline check on an RTX 4050 Laptop GPU (6 GB) successfully warmed both Arabic OCR and the medium speech model in one CUDA worker. With the models resident, the first translated Arabic frame took about 0.96 seconds (including text-model initialization); subsequent unchanged text over a modified background returned in 2–3 ms. The previous worker re-ran OCR at roughly 170–220 ms per warm frame. These are synthetic-fixture measurements, not end-to-end live caption latency; live audio still includes the capture window and model decoding time.
+Local RTX 4050 checks cover actual Arabic OCR, shared medium CUDA inference, rolling speech behavior, silence gating, and a rendered positioned-overlay preview. CPU model profiles and pack validation are reproducible from the linked report. Hosted CI has no NVIDIA GPU; turbo and the new OPUS pack's CUDA timing remain unmeasured.

@@ -23,6 +23,13 @@ class WorkerTests(unittest.TestCase):
                 worker.safe_extract(archive, Path(temp) / "models")
             self.assertFalse((Path(temp) / "outside.txt").exists())
 
+    def test_distant_columns_keep_separate_translation_boxes(self):
+        rows = [([[0, 0], [40, 0], [40, 20], [0, 20]], "News", 0.9),
+                ([[500, 0], [560, 0], [560, 20], [500, 20]], "Headline", 0.9)]
+        regions = worker.ocr_regions(rows, "en")
+        self.assertEqual(len(regions), 2)
+        self.assertEqual(regions[0]["box"], (0, 0, 40, 20))
+
     def test_arabic_words_are_joined_in_reading_order(self):
         rows = [
             ([[10, 10], [80, 10], [80, 35], [10, 35]], "بالعالم", 0.9),
@@ -139,6 +146,16 @@ class WorkerTests(unittest.TestCase):
             for i in range(300):
                 engine.translate("hello " + str(i), "en", "es")
             self.assertLessEqual(len(engine.cache), 256)
+
+    def test_turbo_uses_the_multilingual_recognition_repository(self):
+        self.assertEqual(worker.speech_repository("turbo"), "mobiuslabsgmbh/faster-whisper-large-v3-turbo")
+        self.assertEqual(worker.speech_repository("medium"), "Systran/faster-whisper-medium")
+
+    def test_selected_opus_pack_is_pinned_and_uses_standalone_tokenizers(self):
+        self.assertRegex(worker.OPUS_SHA256, r"^[0-9a-f]{64}$")
+        self.assertTrue(worker.OPUS_URL.startswith("https://github.com/HoodNewsSanaa/HN-IPTV/releases/download/translation-models-v1/"))
+        self.assertEqual(worker.MarianTokenizer.translation_options["beam_size"], 3)
+        self.assertEqual(worker.MarianTokenizer.translation_options["length_penalty"], 1)
 
     def test_missing_pack_is_reported_instead_of_using_a_cloud_service(self):
         with tempfile.TemporaryDirectory() as temp:

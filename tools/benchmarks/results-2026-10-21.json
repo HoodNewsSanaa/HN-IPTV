@@ -1,0 +1,1308 @@
+{
+  "base": {
+    "model": "base",
+    "startup_seconds": 2.272406537000002,
+    "download_bytes": 147882941,
+    "peak_rss_mib": 402.44921875,
+    "device": "cpu",
+    "threads": 2,
+    "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+    "cpu_info": ": AMD EPYC 7763 64-Core Processor",
+    "manifest_sha256": "b348639d295ff8d602931c54cea325ddc587f0955046e6e58a084b07cec7a97d",
+    "groups": {
+      "clean": {
+        "samples": 6,
+        "latency_p50_seconds": 0.9580361494999963,
+        "latency_p95_seconds": 1.4106544359999962,
+        "wer": 0.34375,
+        "real_time_factor": 0.08480271584419173
+      },
+      "competing_voice_minus6db": {
+        "samples": 6,
+        "latency_p50_seconds": 0.9964903540000023,
+        "latency_p95_seconds": 1.1322719402500034,
+        "wer": 0.578125,
+        "real_time_factor": 0.08101259126698115
+      },
+      "noise_10db": {
+        "samples": 6,
+        "latency_p50_seconds": 0.9857046939999989,
+        "latency_p95_seconds": 2.4474052712499983,
+        "wer": 0.5078125,
+        "real_time_factor": 0.10989731986415299
+      },
+      "synthetic_music_5db": {
+        "samples": 6,
+        "latency_p50_seconds": 0.9720736515000041,
+        "latency_p95_seconds": 1.0431322589999965,
+        "wer": 0.328125,
+        "real_time_factor": 0.07798484054616031
+      },
+      "telephone_clipped": {
+        "samples": 6,
+        "latency_p50_seconds": 0.9624252170000034,
+        "latency_p95_seconds": 1.0537885222500023,
+        "wer": 0.421875,
+        "real_time_factor": 0.0783281850568339
+      }
+    }
+  },
+  "small": {
+    "model": "small",
+    "startup_seconds": 4.572702497000002,
+    "download_bytes": 486212372,
+    "peak_rss_mib": 1048.3125,
+    "device": "cpu",
+    "threads": 2,
+    "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.39",
+    "cpu_info": ": INTEL(R) XEON(R) PLATINUM 8573C",
+    "manifest_sha256": "b348639d295ff8d602931c54cea325ddc587f0955046e6e58a084b07cec7a97d",
+    "groups": {
+      "clean": {
+        "samples": 6,
+        "latency_p50_seconds": 1.7903620814999996,
+        "latency_p95_seconds": 1.8537344007499925,
+        "wer": 0.171875,
+        "real_time_factor": 0.14439511623232598
+      },
+      "competing_voice_minus6db": {
+        "samples": 6,
+        "latency_p50_seconds": 1.8216406339999978,
+        "latency_p95_seconds": 1.9244682365000045,
+        "wer": 0.3515625,
+        "real_time_factor": 0.14742024738009427
+      },
+      "noise_10db": {
+        "samples": 6,
+        "latency_p50_seconds": 1.7582272539999977,
+        "latency_p95_seconds": 1.9047361720000033,
+        "wer": 0.25,
+        "real_time_factor": 0.14437246498475195
+      },
+      "synthetic_music_5db": {
+        "samples": 6,
+        "latency_p50_seconds": 1.771569834999994,
+        "latency_p95_seconds": 1.8603784967500019,
+        "wer": 0.1640625,
+        "real_time_factor": 0.14479794692265022
+      },
+      "telephone_clipped": {
+        "samples": 6,
+        "latency_p50_seconds": 1.7885431400000016,
+        "latency_p95_seconds": 1.885647045749991,
+        "wer": 0.171875,
+        "real_time_factor": 0.14462631117271965
+      }
+    }
+  },
+  "medium": {
+    "model": "medium",
+    "startup_seconds": 6.904582341999998,
+    "download_bytes": 1530571735,
+    "peak_rss_mib": 2007.72265625,
+    "device": "cpu",
+    "threads": 2,
+    "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+    "cpu_info": ": AMD EPYC 7763 64-Core Processor",
+    "manifest_sha256": "b348639d295ff8d602931c54cea325ddc587f0955046e6e58a084b07cec7a97d",
+    "groups": {
+      "clean": {
+        "samples": 6,
+        "latency_p50_seconds": 8.466946256,
+        "latency_p95_seconds": 8.871905391749976,
+        "wer": 0.0859375,
+        "real_time_factor": 0.6859435671610754
+      },
+      "competing_voice_minus6db": {
+        "samples": 6,
+        "latency_p50_seconds": 8.516313391499978,
+        "latency_p95_seconds": 9.056947027000007,
+        "wer": 0.15625,
+        "real_time_factor": 0.6903678213473796
+      },
+      "noise_10db": {
+        "samples": 6,
+        "latency_p50_seconds": 8.510209006499991,
+        "latency_p95_seconds": 8.97093436849999,
+        "wer": 0.140625,
+        "real_time_factor": 0.6904646623787078
+      },
+      "synthetic_music_5db": {
+        "samples": 6,
+        "latency_p50_seconds": 8.480295977499992,
+        "latency_p95_seconds": 8.905722351999984,
+        "wer": 0.09375,
+        "real_time_factor": 0.6862070682838914
+      },
+      "telephone_clipped": {
+        "samples": 6,
+        "latency_p50_seconds": 8.494760486500013,
+        "latency_p95_seconds": 8.956036080000004,
+        "wer": 0.109375,
+        "real_time_factor": 0.6873119030773501
+      }
+    }
+  },
+  "vosk-ar": {
+    "model": "vosk-ar",
+    "startup_seconds": 318.352912453,
+    "download_bytes": 698195675,
+    "peak_rss_mib": 850.125,
+    "device": "cpu",
+    "threads": 2,
+    "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+    "cpu_info": ": AMD EPYC 9V74 80-Core Processor",
+    "manifest_sha256": "b348639d295ff8d602931c54cea325ddc587f0955046e6e58a084b07cec7a97d",
+    "groups": {
+      "clean": {
+        "samples": 6,
+        "latency_p50_seconds": 7.143980579500038,
+        "latency_p95_seconds": 8.850044406999984,
+        "wer": 0.1484375,
+        "real_time_factor": 0.5722319281535905
+      },
+      "competing_voice_minus6db": {
+        "samples": 6,
+        "latency_p50_seconds": 7.62276282800002,
+        "latency_p95_seconds": 9.777859229750064,
+        "wer": 0.5703125,
+        "real_time_factor": 0.6380061717493777
+      },
+      "noise_10db": {
+        "samples": 6,
+        "latency_p50_seconds": 7.419926501500015,
+        "latency_p95_seconds": 9.775173809999984,
+        "wer": 0.46875,
+        "real_time_factor": 0.6212993614222342
+      },
+      "synthetic_music_5db": {
+        "samples": 6,
+        "latency_p50_seconds": 7.2307458760000145,
+        "latency_p95_seconds": 8.956717688000012,
+        "wer": 0.1875,
+        "real_time_factor": 0.5797236409065715
+      },
+      "telephone_clipped": {
+        "samples": 6,
+        "latency_p50_seconds": 7.260402767999977,
+        "latency_p95_seconds": 8.90448819525001,
+        "wer": 0.171875,
+        "real_time_factor": 0.5805539760465764
+      }
+    }
+  },
+  "argos": {
+    "model": "argos",
+    "startup_seconds": 1.5117367969999975,
+    "download_bytes": 96362654,
+    "peak_rss_mib": 691.953125,
+    "device": "cpu",
+    "threads": 2,
+    "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.39",
+    "cpu_info": ": AMD EPYC 9V45 96-Core Processor",
+    "manifest_sha256": "b348639d295ff8d602931c54cea325ddc587f0955046e6e58a084b07cec7a97d",
+    "groups": {
+      "clean": {
+        "samples": 32,
+        "latency_p50_seconds": 0.07958590600000548,
+        "latency_p95_seconds": 0.18770615270000088,
+        "chrf": 53.78133027774885
+      },
+      "ocr_corruption": {
+        "samples": 32,
+        "latency_p50_seconds": 0.07482391799999988,
+        "latency_p95_seconds": 0.19604985289999916,
+        "chrf": 48.30405337495587
+      }
+    }
+  },
+  "opus-ct2": {
+    "model": "opus-ct2",
+    "startup_seconds": 6.282206574,
+    "download_bytes": 310096392,
+    "peak_rss_mib": 984.625,
+    "device": "cpu",
+    "threads": 2,
+    "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.39",
+    "cpu_info": ": AMD EPYC 9V45 96-Core Processor",
+    "manifest_sha256": "b348639d295ff8d602931c54cea325ddc587f0955046e6e58a084b07cec7a97d",
+    "groups": {
+      "clean": {
+        "samples": 32,
+        "latency_p50_seconds": 0.07838093550000735,
+        "latency_p95_seconds": 0.18827050150000132,
+        "chrf": 54.79496220318411
+      },
+      "ocr_corruption": {
+        "samples": 32,
+        "latency_p50_seconds": 0.08154664999999994,
+        "latency_p95_seconds": 0.1937545362000044,
+        "chrf": 49.94390366460016
+      }
+    }
+  },
+  "nllb-ct2": {
+    "model": "nllb-ct2",
+    "startup_seconds": 24.143708481000004,
+    "download_bytes": 2470432838,
+    "peak_rss_mib": 3916.8515625,
+    "device": "cpu",
+    "threads": 2,
+    "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.39",
+    "cpu_info": ": AMD EPYC 9V45 96-Core Processor",
+    "manifest_sha256": "b348639d295ff8d602931c54cea325ddc587f0955046e6e58a084b07cec7a97d",
+    "groups": {
+      "clean": {
+        "samples": 32,
+        "latency_p50_seconds": 0.689313202000001,
+        "latency_p95_seconds": 1.6596700113999925,
+        "chrf": 53.66350617779516
+      },
+      "ocr_corruption": {
+        "samples": 32,
+        "latency_p50_seconds": 0.7416674230000027,
+        "latency_p95_seconds": 1.7154506261500087,
+        "chrf": 44.001777274036236
+      }
+    }
+  },
+  "small-baseline": {
+    "model": "small-baseline",
+    "startup_seconds": 46.979682352000005,
+    "download_bytes": 486212372,
+    "peak_rss_mib": 841.5,
+    "device": "cpu",
+    "threads": 2,
+    "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+    "cpu_info": ": AMD EPYC 9V45 96-Core Processor",
+    "manifest_sha256": "b348639d295ff8d602931c54cea325ddc587f0955046e6e58a084b07cec7a97d",
+    "groups": {
+      "clean": {
+        "samples": 6,
+        "latency_p50_seconds": 1.4204162569999994,
+        "latency_p95_seconds": 1.4844196355000037,
+        "wer": 0.171875,
+        "real_time_factor": 0.11385823301912945
+      },
+      "competing_voice_minus6db": {
+        "samples": 6,
+        "latency_p50_seconds": 1.4393938314999986,
+        "latency_p95_seconds": 1.6094500507500094,
+        "wer": 0.375,
+        "real_time_factor": 0.1172535442195733
+      },
+      "music_only": {
+        "samples": 1,
+        "latency_p50_seconds": 0.6911915959999959,
+        "latency_p95_seconds": 0.6911915959999959,
+        "wer": 0,
+        "real_time_factor": 0.2303971986666653
+      },
+      "noise_10db": {
+        "samples": 6,
+        "latency_p50_seconds": 1.3960274040000016,
+        "latency_p95_seconds": 1.5256002135000006,
+        "wer": 0.2578125,
+        "real_time_factor": 0.1129532876490157
+      },
+      "noise_only": {
+        "samples": 1,
+        "latency_p50_seconds": 0.7514637589999893,
+        "latency_p95_seconds": 0.7514637589999893,
+        "wer": 0,
+        "real_time_factor": 0.2504879196666631
+      },
+      "silence": {
+        "samples": 1,
+        "latency_p50_seconds": 0.8717543619999901,
+        "latency_p95_seconds": 0.8717543619999901,
+        "wer": 0,
+        "real_time_factor": 0.29058478733333004
+      },
+      "synthetic_music_5db": {
+        "samples": 6,
+        "latency_p50_seconds": 1.4347732654999916,
+        "latency_p95_seconds": 1.5639955405000041,
+        "wer": 0.1640625,
+        "real_time_factor": 0.11455187771000809
+      },
+      "telephone_clipped": {
+        "samples": 6,
+        "latency_p50_seconds": 1.3990679549999925,
+        "latency_p95_seconds": 1.4934647942500057,
+        "wer": 0.1875,
+        "real_time_factor": 0.11205442601885207
+      }
+    }
+  },
+  "small-vad": {
+    "model": "small-vad",
+    "startup_seconds": 41.54433134100002,
+    "download_bytes": 486212372,
+    "peak_rss_mib": 866.8984375,
+    "device": "cpu",
+    "threads": 2,
+    "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+    "cpu_info": ": AMD EPYC 9V45 96-Core Processor",
+    "manifest_sha256": "b348639d295ff8d602931c54cea325ddc587f0955046e6e58a084b07cec7a97d",
+    "groups": {
+      "clean": {
+        "samples": 6,
+        "latency_p50_seconds": 1.3916366330000116,
+        "latency_p95_seconds": 1.5255000355000057,
+        "wer": 0.1640625,
+        "real_time_factor": 0.11345182015525418
+      },
+      "competing_voice_minus6db": {
+        "samples": 6,
+        "latency_p50_seconds": 1.4353451059999998,
+        "latency_p95_seconds": 1.5616211087499892,
+        "wer": 0.3828125,
+        "real_time_factor": 0.11557953997782061
+      },
+      "music_only": {
+        "samples": 1,
+        "latency_p50_seconds": 0.0036027760000081344,
+        "latency_p95_seconds": 0.0036027760000081344,
+        "wer": 0,
+        "real_time_factor": 0.0012009253333360448
+      },
+      "noise_10db": {
+        "samples": 6,
+        "latency_p50_seconds": 1.417059083500007,
+        "latency_p95_seconds": 1.6240661610000018,
+        "wer": 0.265625,
+        "real_time_factor": 0.11552002619905764
+      },
+      "noise_only": {
+        "samples": 1,
+        "latency_p50_seconds": 0.0037764219999871784,
+        "latency_p95_seconds": 0.0037764219999871784,
+        "wer": 0,
+        "real_time_factor": 0.0012588073333290595
+      },
+      "silence": {
+        "samples": 1,
+        "latency_p50_seconds": 0.004202610999982426,
+        "latency_p95_seconds": 0.004202610999982426,
+        "wer": 0,
+        "real_time_factor": 0.0014008703333274752
+      },
+      "synthetic_music_5db": {
+        "samples": 6,
+        "latency_p50_seconds": 1.423520792500014,
+        "latency_p95_seconds": 1.584285024499998,
+        "wer": 0.140625,
+        "real_time_factor": 0.1166158147352373
+      },
+      "telephone_clipped": {
+        "samples": 6,
+        "latency_p50_seconds": 1.3699909724999983,
+        "latency_p95_seconds": 1.5860145322499974,
+        "wer": 0.1875,
+        "real_time_factor": 0.11262645034654828
+      }
+    }
+  },
+  "small-vad_denoise": {
+    "model": "small-vad_denoise",
+    "startup_seconds": 41.53904930500002,
+    "download_bytes": 486212372,
+    "peak_rss_mib": 867.8203125,
+    "device": "cpu",
+    "threads": 2,
+    "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+    "cpu_info": ": AMD EPYC 9V45 96-Core Processor",
+    "manifest_sha256": "b348639d295ff8d602931c54cea325ddc587f0955046e6e58a084b07cec7a97d",
+    "groups": {
+      "clean": {
+        "samples": 6,
+        "latency_p50_seconds": 1.4438916474999957,
+        "latency_p95_seconds": 1.5619307264999875,
+        "wer": 0.1484375,
+        "real_time_factor": 0.11536228651233647
+      },
+      "competing_voice_minus6db": {
+        "samples": 6,
+        "latency_p50_seconds": 1.4410664654999863,
+        "latency_p95_seconds": 1.5833339689999804,
+        "wer": 0.390625,
+        "real_time_factor": 0.11669541081230857
+      },
+      "music_only": {
+        "samples": 1,
+        "latency_p50_seconds": 0.006379041999991841,
+        "latency_p95_seconds": 0.006379041999991841,
+        "wer": 0,
+        "real_time_factor": 0.0021263473333306138
+      },
+      "noise_10db": {
+        "samples": 6,
+        "latency_p50_seconds": 1.4227606974999958,
+        "latency_p95_seconds": 1.5455306230000119,
+        "wer": 0.2734375,
+        "real_time_factor": 0.11467166154699233
+      },
+      "noise_only": {
+        "samples": 1,
+        "latency_p50_seconds": 0.007072847000017646,
+        "latency_p95_seconds": 0.007072847000017646,
+        "wer": 0,
+        "real_time_factor": 0.0023576156666725487
+      },
+      "silence": {
+        "samples": 1,
+        "latency_p50_seconds": 0.008452798000007533,
+        "latency_p95_seconds": 0.008452798000007533,
+        "wer": 0,
+        "real_time_factor": 0.0028175993333358442
+      },
+      "synthetic_music_5db": {
+        "samples": 6,
+        "latency_p50_seconds": 1.4128199815000073,
+        "latency_p95_seconds": 1.5297918517499767,
+        "wer": 0.1640625,
+        "real_time_factor": 0.11357217230385327
+      },
+      "telephone_clipped": {
+        "samples": 6,
+        "latency_p50_seconds": 1.4148785669999882,
+        "latency_p95_seconds": 1.555934597249987,
+        "wer": 0.1796875,
+        "real_time_factor": 0.11353054423343424
+      }
+    }
+  },
+  "medium-baseline": {
+    "model": "medium-baseline",
+    "startup_seconds": 126.70878800699998,
+    "download_bytes": 1530571735,
+    "peak_rss_mib": 2240.40234375,
+    "device": "cpu",
+    "threads": 2,
+    "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+    "cpu_info": ": AMD EPYC 9V45 96-Core Processor",
+    "manifest_sha256": "b348639d295ff8d602931c54cea325ddc587f0955046e6e58a084b07cec7a97d",
+    "groups": {
+      "clean": {
+        "samples": 6,
+        "latency_p50_seconds": 3.8958711834999917,
+        "latency_p95_seconds": 4.209968642250011,
+        "wer": 0.0859375,
+        "real_time_factor": 0.3136252547685055
+      },
+      "competing_voice_minus6db": {
+        "samples": 6,
+        "latency_p50_seconds": 3.8951619079999773,
+        "latency_p95_seconds": 4.2331746097499945,
+        "wer": 0.1796875,
+        "real_time_factor": 0.3126562754227884
+      },
+      "music_only": {
+        "samples": 1,
+        "latency_p50_seconds": 2.1253273799999874,
+        "latency_p95_seconds": 2.1253273799999874,
+        "wer": 0,
+        "real_time_factor": 0.7084424599999958
+      },
+      "noise_10db": {
+        "samples": 6,
+        "latency_p50_seconds": 3.9332390935000205,
+        "latency_p95_seconds": 4.4422157929999955,
+        "wer": 0.1328125,
+        "real_time_factor": 0.31956687959523244
+      },
+      "noise_only": {
+        "samples": 1,
+        "latency_p50_seconds": 2.2131673159999536,
+        "latency_p95_seconds": 2.2131673159999536,
+        "wer": 0,
+        "real_time_factor": 0.7377224386666512
+      },
+      "silence": {
+        "samples": 1,
+        "latency_p50_seconds": 2.1168365249999965,
+        "latency_p95_seconds": 2.1168365249999965,
+        "wer": 0,
+        "real_time_factor": 0.7056121749999988
+      },
+      "synthetic_music_5db": {
+        "samples": 6,
+        "latency_p50_seconds": 3.865711473499971,
+        "latency_p95_seconds": 4.189872467249984,
+        "wer": 0.09375,
+        "real_time_factor": 0.312145718089824
+      },
+      "telephone_clipped": {
+        "samples": 6,
+        "latency_p50_seconds": 3.979664469499994,
+        "latency_p95_seconds": 4.133342601500004,
+        "wer": 0.1015625,
+        "real_time_factor": 0.3128279342251186
+      }
+    }
+  },
+  "medium-vad": {
+    "model": "medium-vad",
+    "startup_seconds": 112.32971097799998,
+    "download_bytes": 1530571735,
+    "peak_rss_mib": 2240.41796875,
+    "device": "cpu",
+    "threads": 2,
+    "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+    "cpu_info": ": AMD EPYC 9V45 96-Core Processor",
+    "manifest_sha256": "b348639d295ff8d602931c54cea325ddc587f0955046e6e58a084b07cec7a97d",
+    "groups": {
+      "clean": {
+        "samples": 6,
+        "latency_p50_seconds": 3.851233594500002,
+        "latency_p95_seconds": 4.1782425252500275,
+        "wer": 0.078125,
+        "real_time_factor": 0.3118476058220138
+      },
+      "competing_voice_minus6db": {
+        "samples": 6,
+        "latency_p50_seconds": 3.879698249499995,
+        "latency_p95_seconds": 4.1598446985000095,
+        "wer": 0.1796875,
+        "real_time_factor": 0.31009753275575375
+      },
+      "music_only": {
+        "samples": 1,
+        "latency_p50_seconds": 0.0034647349999659127,
+        "latency_p95_seconds": 0.0034647349999659127,
+        "wer": 0,
+        "real_time_factor": 0.0011549116666553043
+      },
+      "noise_10db": {
+        "samples": 6,
+        "latency_p50_seconds": 3.878146690499989,
+        "latency_p95_seconds": 4.183533719499991,
+        "wer": 0.140625,
+        "real_time_factor": 0.3123161938037155
+      },
+      "noise_only": {
+        "samples": 1,
+        "latency_p50_seconds": 0.0035987640000030297,
+        "latency_p95_seconds": 0.0035987640000030297,
+        "wer": 0,
+        "real_time_factor": 0.00119958800000101
+      },
+      "silence": {
+        "samples": 1,
+        "latency_p50_seconds": 0.004661211999973602,
+        "latency_p95_seconds": 0.004661211999973602,
+        "wer": 0,
+        "real_time_factor": 0.0015537373333245341
+      },
+      "synthetic_music_5db": {
+        "samples": 6,
+        "latency_p50_seconds": 3.8772649684999863,
+        "latency_p95_seconds": 4.193114199000007,
+        "wer": 0.078125,
+        "real_time_factor": 0.31041917423066145
+      },
+      "telephone_clipped": {
+        "samples": 6,
+        "latency_p50_seconds": 3.858394659499993,
+        "latency_p95_seconds": 4.0843866757499825,
+        "wer": 0.0703125,
+        "real_time_factor": 0.31058184301358394
+      }
+    }
+  },
+  "medium-vad_denoise": {
+    "model": "medium-vad_denoise",
+    "startup_seconds": 111.48545626200001,
+    "download_bytes": 1530571735,
+    "peak_rss_mib": 2240.41796875,
+    "device": "cpu",
+    "threads": 2,
+    "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+    "cpu_info": ": AMD EPYC 9V45 96-Core Processor",
+    "manifest_sha256": "b348639d295ff8d602931c54cea325ddc587f0955046e6e58a084b07cec7a97d",
+    "groups": {
+      "clean": {
+        "samples": 6,
+        "latency_p50_seconds": 3.8309396639999704,
+        "latency_p95_seconds": 4.164478182999986,
+        "wer": 0.078125,
+        "real_time_factor": 0.3089465576102014
+      },
+      "competing_voice_minus6db": {
+        "samples": 6,
+        "latency_p50_seconds": 3.784985761999991,
+        "latency_p95_seconds": 4.068377247000015,
+        "wer": 0.15625,
+        "real_time_factor": 0.30474827958136896
+      },
+      "music_only": {
+        "samples": 1,
+        "latency_p50_seconds": 0.006075161000012486,
+        "latency_p95_seconds": 0.006075161000012486,
+        "wer": 0,
+        "real_time_factor": 0.0020250536666708285
+      },
+      "noise_10db": {
+        "samples": 6,
+        "latency_p50_seconds": 3.85477130000001,
+        "latency_p95_seconds": 4.187958305249978,
+        "wer": 0.140625,
+        "real_time_factor": 0.31066495593290844
+      },
+      "noise_only": {
+        "samples": 1,
+        "latency_p50_seconds": 0.006738837999932912,
+        "latency_p95_seconds": 0.006738837999932912,
+        "wer": 0,
+        "real_time_factor": 0.0022462793333109707
+      },
+      "silence": {
+        "samples": 1,
+        "latency_p50_seconds": 0.007934264000027724,
+        "latency_p95_seconds": 0.007934264000027724,
+        "wer": 0,
+        "real_time_factor": 0.002644754666675908
+      },
+      "synthetic_music_5db": {
+        "samples": 6,
+        "latency_p50_seconds": 3.805308339499959,
+        "latency_p95_seconds": 4.211757497000022,
+        "wer": 0.078125,
+        "real_time_factor": 0.30884140113667746
+      },
+      "telephone_clipped": {
+        "samples": 6,
+        "latency_p50_seconds": 3.863035688000025,
+        "latency_p95_seconds": 4.181985470249984,
+        "wer": 0.0859375,
+        "real_time_factor": 0.31025244336013247
+      }
+    }
+  },
+  "turbo-baseline": {
+    "model": "turbo-baseline",
+    "startup_seconds": 115.81149348899999,
+    "download_bytes": 1621665983,
+    "peak_rss_mib": 2545.77734375,
+    "device": "cpu",
+    "threads": 2,
+    "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+    "cpu_info": ": AMD EPYC 9V45 96-Core Processor",
+    "manifest_sha256": "b348639d295ff8d602931c54cea325ddc587f0955046e6e58a084b07cec7a97d",
+    "groups": {
+      "clean": {
+        "samples": 6,
+        "latency_p50_seconds": 3.4553033085000493,
+        "latency_p95_seconds": 3.57044667225,
+        "wer": 0.078125,
+        "real_time_factor": 0.28578250094261415
+      },
+      "competing_voice_minus6db": {
+        "samples": 6,
+        "latency_p50_seconds": 3.526684244999956,
+        "latency_p95_seconds": 3.6468374149999647,
+        "wer": 0.1015625,
+        "real_time_factor": 0.28884302984474597
+      },
+      "music_only": {
+        "samples": 1,
+        "latency_p50_seconds": 2.942782285999897,
+        "latency_p95_seconds": 2.942782285999897,
+        "wer": 3,
+        "real_time_factor": 0.9809274286666323
+      },
+      "noise_10db": {
+        "samples": 6,
+        "latency_p50_seconds": 3.4778001384999584,
+        "latency_p95_seconds": 3.6447077717500633,
+        "wer": 0.1328125,
+        "real_time_factor": 0.2876158722345451
+      },
+      "noise_only": {
+        "samples": 1,
+        "latency_p50_seconds": 2.9783528489999753,
+        "latency_p95_seconds": 2.9783528489999753,
+        "wer": 3,
+        "real_time_factor": 0.9927842829999918
+      },
+      "silence": {
+        "samples": 1,
+        "latency_p50_seconds": 2.9615784249999706,
+        "latency_p95_seconds": 2.9615784249999706,
+        "wer": 3,
+        "real_time_factor": 0.9871928083333236
+      },
+      "synthetic_music_5db": {
+        "samples": 6,
+        "latency_p50_seconds": 3.4503886410000177,
+        "latency_p95_seconds": 3.675887208249975,
+        "wer": 0.0859375,
+        "real_time_factor": 0.2876317251316883
+      },
+      "telephone_clipped": {
+        "samples": 6,
+        "latency_p50_seconds": 3.506087012500018,
+        "latency_p95_seconds": 3.6231488895000723,
+        "wer": 0.078125,
+        "real_time_factor": 0.2893725640282815
+      }
+    }
+  },
+  "turbo-vad": {
+    "model": "turbo-vad",
+    "startup_seconds": 103.30186851600001,
+    "download_bytes": 1621665983,
+    "peak_rss_mib": 2545.796875,
+    "device": "cpu",
+    "threads": 2,
+    "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+    "cpu_info": ": AMD EPYC 9V45 96-Core Processor",
+    "manifest_sha256": "b348639d295ff8d602931c54cea325ddc587f0955046e6e58a084b07cec7a97d",
+    "groups": {
+      "clean": {
+        "samples": 6,
+        "latency_p50_seconds": 3.4935039344999836,
+        "latency_p95_seconds": 3.5879449287499767,
+        "wer": 0.0703125,
+        "real_time_factor": 0.2868887145550305
+      },
+      "competing_voice_minus6db": {
+        "samples": 6,
+        "latency_p50_seconds": 3.4693082349999713,
+        "latency_p95_seconds": 3.61203608874996,
+        "wer": 0.125,
+        "real_time_factor": 0.28625072213750746
+      },
+      "music_only": {
+        "samples": 1,
+        "latency_p50_seconds": 0.00349752499994338,
+        "latency_p95_seconds": 0.00349752499994338,
+        "wer": 0,
+        "real_time_factor": 0.0011658416666477933
+      },
+      "noise_10db": {
+        "samples": 6,
+        "latency_p50_seconds": 3.4749940854999863,
+        "latency_p95_seconds": 3.6377706280000552,
+        "wer": 0.125,
+        "real_time_factor": 0.2879849254366512
+      },
+      "noise_only": {
+        "samples": 1,
+        "latency_p50_seconds": 0.003744582999956947,
+        "latency_p95_seconds": 0.003744582999956947,
+        "wer": 0,
+        "real_time_factor": 0.0012481943333189822
+      },
+      "silence": {
+        "samples": 1,
+        "latency_p50_seconds": 0.004756870000051094,
+        "latency_p95_seconds": 0.004756870000051094,
+        "wer": 0,
+        "real_time_factor": 0.0015856233333503649
+      },
+      "synthetic_music_5db": {
+        "samples": 6,
+        "latency_p50_seconds": 3.4625681295000277,
+        "latency_p95_seconds": 3.5794888919999437,
+        "wer": 0.078125,
+        "real_time_factor": 0.28467220317438213
+      },
+      "telephone_clipped": {
+        "samples": 6,
+        "latency_p50_seconds": 3.455351187999952,
+        "latency_p95_seconds": 3.556663195000027,
+        "wer": 0.09375,
+        "real_time_factor": 0.2843212233296344
+      }
+    }
+  },
+  "turbo-vad_denoise": {
+    "model": "turbo-vad_denoise",
+    "startup_seconds": 104.82843406500001,
+    "download_bytes": 1621665983,
+    "peak_rss_mib": 2545.8125,
+    "device": "cpu",
+    "threads": 2,
+    "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+    "cpu_info": ": AMD EPYC 9V45 96-Core Processor",
+    "manifest_sha256": "b348639d295ff8d602931c54cea325ddc587f0955046e6e58a084b07cec7a97d",
+    "groups": {
+      "clean": {
+        "samples": 6,
+        "latency_p50_seconds": 3.5147340879999547,
+        "latency_p95_seconds": 3.6937304690000303,
+        "wer": 0.078125,
+        "real_time_factor": 0.29036931196284893
+      },
+      "competing_voice_minus6db": {
+        "samples": 6,
+        "latency_p50_seconds": 3.4988305040000682,
+        "latency_p95_seconds": 3.7129534927499606,
+        "wer": 0.140625,
+        "real_time_factor": 0.29150442291377826
+      },
+      "music_only": {
+        "samples": 1,
+        "latency_p50_seconds": 0.006106950000003053,
+        "latency_p95_seconds": 0.006106950000003053,
+        "wer": 0,
+        "real_time_factor": 0.002035650000001018
+      },
+      "noise_10db": {
+        "samples": 6,
+        "latency_p50_seconds": 3.4781105554999954,
+        "latency_p95_seconds": 3.6190118394999615,
+        "wer": 0.125,
+        "real_time_factor": 0.28833363577765436
+      },
+      "noise_only": {
+        "samples": 1,
+        "latency_p50_seconds": 0.006732210999985,
+        "latency_p95_seconds": 0.006732210999985,
+        "wer": 0,
+        "real_time_factor": 0.002244070333328333
+      },
+      "silence": {
+        "samples": 1,
+        "latency_p50_seconds": 0.006867341999964083,
+        "latency_p95_seconds": 0.006867341999964083,
+        "wer": 0,
+        "real_time_factor": 0.0022891139999880275
+      },
+      "synthetic_music_5db": {
+        "samples": 6,
+        "latency_p50_seconds": 3.5391055439999946,
+        "latency_p95_seconds": 3.6495876120000332,
+        "wer": 0.078125,
+        "real_time_factor": 0.291692744316608
+      },
+      "telephone_clipped": {
+        "samples": 6,
+        "latency_p50_seconds": 3.5168453089999616,
+        "latency_p95_seconds": 3.6087086632499847,
+        "wer": 0.09375,
+        "real_time_factor": 0.2892570089270856
+      }
+    }
+  },
+  "opusPackage": {
+    "schema": 1,
+    "type": "marian",
+    "source": "ar",
+    "target": "en",
+    "source_repo": "Helsinki-NLP/opus-mt-ar-en",
+    "source_revision": "c5b2a50db78d6be98ae207223f8d4f63bc7a0ff1",
+    "weights": "float16",
+    "source_eos": true,
+    "sha256": "3dc65d3ee89b5cfd26d9dfd07bd0b72f4eea956ddba495e9efa3f6ad1d14fbe3",
+    "bytes": 142635115,
+    "model_disk_bytes": 156839941,
+    "groups": {
+      "clean": {
+        "chrf": 54.79496220318411,
+        "latency_p50_seconds": 0.19047070299998836,
+        "latency_p95_seconds": 0.4153714431000011
+      },
+      "ocr_corruption": {
+        "chrf": 49.570257137663404,
+        "latency_p50_seconds": 0.19019492049999087,
+        "latency_p95_seconds": 0.47463079929999163
+      }
+    },
+    "tokenizer_parity": true,
+    "offline_cpu_load": true
+  },
+  "local": {
+    "gpu-speech-results": {
+      "base-baseline": {
+        "clean": {
+          "wer": 0.2890625,
+          "p50": 0.42202855000005,
+          "rtf": 0.03315235514278014
+        },
+        "synthetic_music_5db": {
+          "wer": 0.3203125,
+          "p50": 0.4632682499996008,
+          "rtf": 0.037111454116982745
+        },
+        "noise_10db": {
+          "wer": 0.53125,
+          "p50": 0.47410190000027796,
+          "rtf": 0.03689035902414184
+        },
+        "telephone_clipped": {
+          "wer": 0.4453125,
+          "p50": 0.43669204999969224,
+          "rtf": 0.0355897421679723
+        },
+        "competing_voice_minus6db": {
+          "wer": 0.5546875,
+          "p50": 0.49045544999989943,
+          "rtf": 0.03711179789296922
+        },
+        "silence": {
+          "text": "",
+          "seconds": 1.2413383000002796
+        },
+        "noise_only": {
+          "text": "",
+          "seconds": 0.13890539999920293
+        },
+        "music_only": {
+          "text": "",
+          "seconds": 0.2382423999997627
+        }
+      },
+      "base-vad": {
+        "clean": {
+          "wer": 0.3125,
+          "p50": 0.5082194999999956,
+          "rtf": 0.041649564735235546
+        },
+        "synthetic_music_5db": {
+          "wer": 0.3203125,
+          "p50": 0.5617677499999445,
+          "rtf": 0.043567219295813704
+        },
+        "noise_10db": {
+          "wer": 0.5234375,
+          "p50": 0.5897578999997677,
+          "rtf": 0.04627276545605481
+        },
+        "telephone_clipped": {
+          "wer": 0.3828125,
+          "p50": 0.5514035000001059,
+          "rtf": 0.04360191571943037
+        },
+        "competing_voice_minus6db": {
+          "wer": 0.6328125,
+          "p50": 0.6183037500004502,
+          "rtf": 0.0578149403937044
+        },
+        "silence": {
+          "text": "",
+          "seconds": 0.0070901999997659
+        },
+        "noise_only": {
+          "text": "",
+          "seconds": 0.0074008000001413166
+        },
+        "music_only": {
+          "text": "",
+          "seconds": 0.006472800000665302
+        }
+      },
+      "base-vad_denoise": {
+        "clean": {
+          "wer": 0.34375,
+          "p50": 0.494379950000166,
+          "rtf": 0.044044171056274714
+        },
+        "synthetic_music_5db": {
+          "wer": 0.3203125,
+          "p50": 0.4793360499998016,
+          "rtf": 0.039622477127797456
+        },
+        "noise_10db": {
+          "wer": 0.484375,
+          "p50": 0.491222099999959,
+          "rtf": 0.0419919670085988
+        },
+        "telephone_clipped": {
+          "wer": 0.375,
+          "p50": 0.48934749999989435,
+          "rtf": 0.04238312170780212
+        },
+        "competing_voice_minus6db": {
+          "wer": 0.5703125,
+          "p50": 0.5704389500001525,
+          "rtf": 0.04670827141669335
+        },
+        "silence": {
+          "text": "",
+          "seconds": 0.012460199999623
+        },
+        "noise_only": {
+          "text": "",
+          "seconds": 0.013638299999911396
+        },
+        "music_only": {
+          "text": "",
+          "seconds": 0.012798300000213203
+        }
+      },
+      "medium-baseline": {
+        "clean": {
+          "wer": 0.0859375,
+          "p50": 1.619019749999552,
+          "rtf": 0.13141271693925863
+        },
+        "synthetic_music_5db": {
+          "wer": 0.09375,
+          "p50": 1.6222702499999286,
+          "rtf": 0.126145299417811
+        },
+        "noise_10db": {
+          "wer": 0.1484375,
+          "p50": 1.8333629000003384,
+          "rtf": 0.14866641253119053
+        },
+        "telephone_clipped": {
+          "wer": 0.109375,
+          "p50": 1.5493505499998719,
+          "rtf": 0.13155254505129205
+        },
+        "competing_voice_minus6db": {
+          "wer": 0.1796875,
+          "p50": 1.6491942499997094,
+          "rtf": 0.1323284779595252
+        },
+        "silence": {
+          "text": "",
+          "seconds": 0.3721779000006791
+        },
+        "noise_only": {
+          "text": "",
+          "seconds": 0.36007530000006227
+        },
+        "music_only": {
+          "text": "",
+          "seconds": 0.39971110000078625
+        }
+      },
+      "medium-vad": {
+        "clean": {
+          "wer": 0.078125,
+          "p50": 1.5370418500001506,
+          "rtf": 0.11496279595233151
+        },
+        "synthetic_music_5db": {
+          "wer": 0.078125,
+          "p50": 1.439759899999899,
+          "rtf": 0.11555439007483859
+        },
+        "noise_10db": {
+          "wer": 0.1484375,
+          "p50": 1.5443559999998797,
+          "rtf": 0.11306792348214263
+        },
+        "telephone_clipped": {
+          "wer": 0.0859375,
+          "p50": 1.381870550000258,
+          "rtf": 0.11651570834487598
+        },
+        "competing_voice_minus6db": {
+          "wer": 0.171875,
+          "p50": 1.4733863999999812,
+          "rtf": 0.1251209828112027
+        },
+        "silence": {
+          "text": "",
+          "seconds": 0.0068037000000913395
+        },
+        "noise_only": {
+          "text": "",
+          "seconds": 0.0068215999999665655
+        },
+        "music_only": {
+          "text": "",
+          "seconds": 0.006473800000094343
+        }
+      },
+      "medium-vad_denoise": {
+        "clean": {
+          "wer": 0.078125,
+          "p50": 1.6807721999998648,
+          "rtf": 0.13217258386471328
+        },
+        "synthetic_music_5db": {
+          "wer": 0.078125,
+          "p50": 1.3511618999996244,
+          "rtf": 0.11210947186026883
+        },
+        "noise_10db": {
+          "wer": 0.1484375,
+          "p50": 1.5316643999999542,
+          "rtf": 0.11791309537011695
+        },
+        "telephone_clipped": {
+          "wer": 0.0703125,
+          "p50": 1.2079936499999349,
+          "rtf": 0.10414277100083946
+        },
+        "competing_voice_minus6db": {
+          "wer": 0.1640625,
+          "p50": 1.0789990500002204,
+          "rtf": 0.11001869559190397
+        },
+        "silence": {
+          "text": "",
+          "seconds": 0.007642900000064401
+        },
+        "noise_only": {
+          "text": "",
+          "seconds": 0.007958299999700102
+        },
+        "music_only": {
+          "text": "",
+          "seconds": 0.007490499999221356
+        }
+      }
+    },
+    "live-window-results": {
+      "3.5": {
+        "context_seconds": 0.75,
+        "wer": 0.2890625,
+        "processing_p50_seconds": 0.4267139000003226,
+        "processing_p95_seconds": 0.5303146399999604,
+        "max_window_wait_seconds": 3.5
+      },
+      "2.5": {
+        "context_seconds": 0.5,
+        "wer": 0.5234375,
+        "processing_p50_seconds": 0.35993669999970734,
+        "processing_p95_seconds": 0.45427520000021104,
+        "max_window_wait_seconds": 2.5
+      },
+      "3.0": {
+        "context_seconds": 1,
+        "wer": 0.4609375,
+        "processing_p50_seconds": 0.43186900000000605,
+        "processing_p95_seconds": 0.5650368249994244,
+        "max_window_wait_seconds": 3
+      }
+    },
+    "live-context-results": {
+      "2.5": {
+        "context_seconds": 5,
+        "wer": 0.9609375,
+        "processing_p50_seconds": 0.5627479500003574,
+        "processing_p95_seconds": 0.7440933399998357,
+        "max_window_wait_seconds": 2.5
+      },
+      "3.5": {
+        "context_seconds": 5,
+        "wer": 0.9609375,
+        "processing_p50_seconds": 0.5821915999995326,
+        "processing_p95_seconds": 0.772344399999929,
+        "max_window_wait_seconds": 3.5
+      },
+      "4.0": {
+        "context_seconds": 4,
+        "wer": 0.75,
+        "processing_p50_seconds": 0.5365007499999592,
+        "processing_p95_seconds": 0.7662255399999595,
+        "max_window_wait_seconds": 4
+      }
+    },
+    "rolling-pipeline-results": [
+      {
+        "pipeline": "direct",
+        "offset": 0,
+        "seconds": 0.37205770000036864,
+        "result": {
+          "text": "It was formed in the Atlantic Ocean today with 10,000 people.",
+          "source": "ar",
+          "target": "en",
+          "replace_speech": true,
+          "backend": "NVIDIA CUDA"
+        }
+      },
+      {
+        "pipeline": "direct",
+        "offset": 2.5,
+        "seconds": 0.2996399999992718,
+        "result": {
+          "text": "In the Atlantic Ocean, there are 10",
+          "source": "ar",
+          "target": "en",
+          "replace_speech": true,
+          "backend": "NVIDIA CUDA"
+        }
+      },
+      {
+        "pipeline": "direct",
+        "offset": 5,
+        "seconds": 0.559599199999866,
+        "result": {
+          "text": "In the Atlantic Ocean today, 10 crystals named for the season of the atlantic crystals are formed, the crystal is similar to the",
+          "source": "ar",
+          "target": "en",
+          "replace_speech": true,
+          "backend": "NVIDIA CUDA"
+        }
+      },
+      {
+        "pipeline": "direct",
+        "offset": 7.5,
+        "seconds": 0.015277200000127777,
+        "result": {
+          "text": "",
+          "source": "ar",
+          "target": "en",
+          "backend": "NVIDIA CUDA"
+        }
+      },
+      {
+        "pipeline": "staged",
+        "offset": 0,
+        "seconds": 0.8380071000001408,
+        "result": {
+          "text": "I was formed in the Atlantic today, 10 digits.",
+          "source": "ar",
+          "target": "en",
+          "replace_speech": true,
+          "backend": "NVIDIA CUDA"
+        }
+      },
+      {
+        "pipeline": "staged",
+        "offset": 2.5,
+        "seconds": 0.6260525000006965,
+        "result": {
+          "text": "The Atlantic today formed 10 storms called the Atlantic hurricane season.",
+          "source": "ar",
+          "target": "en",
+          "replace_speech": true,
+          "backend": "NVIDIA CUDA"
+        }
+      },
+      {
+        "pipeline": "staged",
+        "offset": 5,
+        "seconds": 0.8354462999996031,
+        "result": {
+          "text": "The Atlantic was formed today as the life of a storm called the Atlantic hurricane season.",
+          "source": "ar",
+          "target": "en",
+          "replace_speech": true,
+          "backend": "NVIDIA CUDA"
+        }
+      },
+      {
+        "pipeline": "staged",
+        "offset": 7.5,
+        "seconds": 0.015085599999110855,
+        "result": {
+          "text": "",
+          "source": "ar",
+          "target": "en",
+          "backend": "NVIDIA CUDA"
+        }
+      }
+    ],
+    "shared-gpu-results": {
+      "screen_warmup_seconds": 6.023,
+      "screen_backend": "NVIDIA CUDA",
+      "audio_warmup_seconds": 5.855,
+      "audio_backend": "NVIDIA CUDA",
+      "screen_0_seconds": 1.7807,
+      "screen_1_seconds": 0.007,
+      "screen_2_seconds": 0.0057,
+      "screen_3_seconds": 0.0214,
+      "passed": true
+    }
+  }
+}
