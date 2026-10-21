@@ -23,6 +23,21 @@ class WorkerTests(unittest.TestCase):
                 worker.safe_extract(archive, Path(temp) / "models")
             self.assertFalse((Path(temp) / "outside.txt").exists())
 
+    def test_arabic_words_are_joined_in_reading_order(self):
+        rows = [
+            ([[10, 10], [80, 10], [80, 35], [10, 35]], "بالعالم", 0.9),
+            ([[90, 12], [150, 12], [150, 37], [90, 37]], "مرحبا", 0.9),
+        ]
+        self.assertEqual(worker.ocr_lines(rows, "ar"), ["مرحبا بالعالم"])
+        self.assertEqual(worker.ocr_lines([
+            ([[80, 10], [150, 10], [150, 35], [80, 35]], "world", 0.9),
+            ([[10, 10], [70, 10], [70, 35], [10, 35]], "Hello", 0.9)], "en"), ["Hello world"])
+
+    def test_overlapping_speech_ignores_punctuation_without_erasing_new_words(self):
+        self.assertEqual(worker.speech_delta("Hello, world.", "World! Here is the news."), "Here is the news.")
+        self.assertEqual(worker.speech_delta("Hello world", ""), "")
+        self.assertEqual(worker.speech_delta("مرحبا بالعالم", "بالعالم اليوم"), "اليوم")
+
     def test_cpu_selection_does_not_require_gpu_libraries(self):
         self.assertEqual(worker.select_device("cpu"), ("cpu", None))
 

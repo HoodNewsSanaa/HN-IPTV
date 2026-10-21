@@ -36,6 +36,8 @@ def main():
             report[kind + "_" + target + "_seconds"] = time.monotonic() - start
             report[kind + "_" + target + "_result"] = response
             return response["text"]
+        request("prepare_screen", b"", source="en")
+        request("prepare_audio", b"", source="en")
         with wave.open(args.audio, "rb") as audio:
             data = np.frombuffer(audio.readframes(audio.getnframes()), dtype="<i2")
             if audio.getnchannels() > 1:
@@ -54,6 +56,13 @@ def main():
         output = io.BytesIO(); image.save(output, format="PNG")
         translated_text = request("screen", output.getvalue())
         assert re.search("hola|mundo", translated_text, re.I), translated_text
+        # Only the moving background changes; the text patches must reuse the recognized result.
+        draw.rectangle((950, 0, 999, 40), fill="blue")
+        output = io.BytesIO(); image.save(output, format="PNG")
+        cached_text = request("screen", output.getvalue())
+        assert cached_text == translated_text
+        assert report["screen_es_result"].get("cached") is True, "Unchanged text was recognized again"
+        report["unchanged_text_cache"] = True
         draw.rectangle((0, 0, 1000, 260), fill="white")
         draw.text((50, 70), "Hola mundo", fill="black", font=font)
         output = io.BytesIO(); image.save(output, format="PNG")

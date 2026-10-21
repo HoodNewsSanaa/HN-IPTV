@@ -48,3 +48,15 @@ Translation settings now offer `auto`, `cuda` and `cpu`. Preparing models with A
 Speech recognition, OCR and text translation use CUDA when available. Startup or inference failures (including GPU memory exhaustion) fall back to CPU and the app reports the active backend. Setup runs a short CUDA speech inference to check the libraries. On an RTX 4050 6 GB, start with `small`; `medium` is available for better recognition at increased memory and processing cost. GPU speed alone cannot improve the translation model itself. Decoding now considers more hypotheses. Explicit input language can help with short, noisy or multilingual clips.
 
 Automated Windows tests exercise real CPU model inference plus CUDA-unavailable and out-of-memory fallback cases. Hosted CI has no NVIDIA GPU, so actual CUDA performance must be checked on GPU hardware.
+
+## Translation performance and reliability in 0.11.4
+
+Speech and screen translation share one worker and CUDA context. Models warm up before audio capture begins; the player shows preparation and errors inside the video overlay, including fullscreen. Audio uses phrase boundaries (at least 1.5 seconds, a short silence, or a 3.5-second maximum) with 0.75 seconds of context and a bounded four-segment queue. Captions keep recent context and empty results do not erase them. Three speech beams on CUDA (two on CPU) balance decoding cost and accuracy; model size still determines much of recognition quality.
+
+Screen capture supports negative stride and retains up to 1920×1080 pixels. OCR joins words into lines, respects right-to-left scripts, and filters already-English station logos when translating foreign content to English. Text patches are checked independently of the moving background; unchanged text reuses its result between full scans. Screen translation remains active on paused video. Capture errors retry rather than silently terminating the loop.
+
+The fullscreen and translation windows guard against reentrant activation and callbacks after closing, including fullscreen exit and PiP return. Toggle controls use a darker background, bright text and border when active; CC and mute also keep explicit on/off labels.
+
+No new runtime dependencies or language-pack downloads are required when upgrading from a prepared 0.11.3 installation.
+
+A local offline check on an RTX 4050 Laptop GPU (6 GB) successfully warmed both Arabic OCR and the medium speech model in one CUDA worker. With the models resident, the first translated Arabic frame took about 0.96 seconds (including text-model initialization); subsequent unchanged text over a modified background returned in 2–3 ms. The previous worker re-ran OCR at roughly 170–220 ms per warm frame. These are synthetic-fixture measurements, not end-to-end live caption latency; live audio still includes the capture window and model decoding time.

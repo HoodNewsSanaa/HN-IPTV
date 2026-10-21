@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.11.3"
+  #define AppVersion "0.11.4"
 #endif
 #ifndef PlaybackEngine
   #define PlaybackEngine "mpv"
@@ -66,7 +66,7 @@ Filename: "{app}\HN-IPTV.exe"; Description: "Launch HN-IPTV"; Flags: nowait post
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if (CurUninstallStep = usPostUninstall) and (not UninstallSilent) then
-    if MsgBox('Delete HN-IPTV user data, playlists, EPG cache, logos and favorites? This cannot be undone.',
+    if MsgBox('Delete HN-IPTV user data, playlists, EPG cache, logos, favorites, translation models and the private CUDA runtime? This cannot be undone.',
         mbConfirmation, MB_YESNO) = IDYES then
       DelTree(ExpandConstant('{localappdata}\HN-IPTV'), True, True, True);
 end;

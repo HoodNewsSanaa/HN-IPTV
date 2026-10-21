@@ -1,3 +1,13 @@
+# 0.11.4 Feature Rich preview
+
+- Fix Arabic and other right-to-left OCR reading order; preserve small text at up to 1080p and handle bottom-up video frames.
+- Cache unchanged text regions while the video background moves; retry frame capture errors and translate paused frames.
+- Share and prewarm one GPU worker before starting loopback capture, reducing duplicate GPU memory use and startup speech loss.
+- Segment speech at short pauses or a 3.5-second limit and retain readable caption context across empty results.
+- Guard fullscreen and translation overlays against reentrant activation and late callbacks after closing.
+- Show darker active colors for CC, translation, pause, mute, Info, fullscreen, PiP, favorites and search panels.
+- Keep existing models, CUDA libraries, playlists and settings during installation.
+
 # 0.11.3 Feature Rich preview
 
 - Add Auto / NVIDIA CUDA / CPU translation acceleration with private optional CUDA 12.8 libraries.

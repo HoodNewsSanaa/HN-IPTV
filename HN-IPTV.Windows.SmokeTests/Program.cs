@@ -357,7 +357,31 @@ internal static class Program
                 fullscreen.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(fullscreen),
                     Environment.TickCount, Key.Escape) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
                 await UntilAsync(() => Task.FromResult(!(bool)typeof(MainWindow).GetField("_isFullScreen", Private)!.GetValue(window)!));
+                fullscreen.Reveal(); // A queued activation must never reopen a closed window.
                 results["fullscreen_reactivation_and_escape"] = true;
+                for (int pass = 0; pass < 3; pass++) {
+                    Invoke(window, "ToggleFullscreen");
+                    var overlay = new TranslationOverlay(() => (window, host));
+                    overlay.SetScreen("Translated screen text in fullscreen");
+                    overlay.SetSpeech("Continuous speech caption");
+                    overlay.SetSpeech(""); // A silent chunk must preserve the previous caption.
+                    await UntilAsync(() => Task.FromResult(overlay.IsVisible));
+                    window.Activate();
+                    Invoke(window, "ToggleFullscreen");
+                    overlay.SetScreen("Translated screen text after fullscreen");
+                    overlay.Close();
+                    overlay.SetSpeech("Late cancelled result");
+                    await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+                }
+                results["translation_fullscreen_lifecycle"] = true;
+                IntPtr pixelFixture = Marshal.AllocHGlobal(16);
+                try {
+                    Marshal.Copy(new byte[] { 1,2,3,255, 4,5,6,255, 7,8,9,255, 10,11,12,255 }, 0, pixelFixture, 16);
+                    var pixels = VideoFrameCopy.Bgra(pixelFixture + 8, 2, 2, -8, 16);
+                    if (pixels == null || pixels[0] != 7 || pixels[8] != 1) throw new InvalidOperationException("Bottom-up video capture failed.");
+                    if (VideoFrameCopy.Bgra(pixelFixture, 2, 2, 4, 16) != null) throw new InvalidOperationException("Invalid video stride accepted.");
+                } finally { Marshal.FreeHGlobal(pixelFixture); }
+                results["negative_stride_video_frame"] = true;
                 var after = await controller.ProgressAsync();
                 if (!after.Playing || after.Time <= before.Time) throw new InvalidOperationException("Playback did not advance across fullscreen.");
                 results["fullscreen_playback_advanced"] = true;
@@ -377,6 +401,10 @@ internal static class Program
                     cc.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     await UntilAsync(async () => { var state = await CaptionState(); return state.Visible && state.Text.Contains("HN-IPTV caption test"); });
                     if (!cc.Content.ToString()!.Contains("On")) throw new InvalidOperationException("CC button state did not update.");
+                    await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ContextIdle);
+                    if (!ToggleVisual.GetIsActive(cc) || cc.Background is not System.Windows.Media.SolidColorBrush ccBrush ||
+                        ccBrush.Color != System.Windows.Media.Color.FromRgb(11, 23, 40))
+                        throw new InvalidOperationException("Enabled CC does not show the darker active color.");
                     await UntilAsync(() => Task.FromResult(File.Exists(Path.Combine(AppStorage.DataDirectory, "player-settings.json")) &&
                         HnIptv.Preferences.PlayerSettings.Load(Path.Combine(AppStorage.DataDirectory, "player-settings.json")).CaptionsEnabled));
                     await (Task)Invoke(window, "TuneSelectedAsync", true, false)!;
@@ -392,7 +420,9 @@ internal static class Program
                     captionPip.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(captionPip), Environment.TickCount, Key.C) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
                     await UntilAsync(async () => !(await CaptionState()).Visible); captionPip.Close();
                     results["captions_decoded_toggle_and_retune"] = true;
+                    if (ToggleVisual.GetIsActive(cc)) throw new InvalidOperationException("Disabled CC still shows active color.");
                     results["captions_pip_button_and_shortcut"] = true;
+                    results["toggle_button_active_colors"] = true;
                 }
                 var child = typeof(PlaybackController).GetMethod("ChildMetrics", Private | BindingFlags.Public)?.Invoke(controller, null);
                 if (child is ValueTuple<long, long, double> childMetrics) {

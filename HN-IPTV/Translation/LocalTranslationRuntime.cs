@@ -153,6 +153,7 @@ internal sealed class LocalTranslationWorker : IAsyncDisposable
         await _gate.WaitAsync(ct);
         try
         {
+            using var timing = App.Measure("translation." + kind);
             long id = ++_sequence;
             var line = JsonSerializer.Serialize(new { id, kind, data = Convert.ToBase64String(data),
                 source = settings.InputLanguage, target = settings.Target });

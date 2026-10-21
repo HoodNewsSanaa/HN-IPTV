@@ -21,7 +21,8 @@ internal sealed class PictureInPictureWindow : Window
     private readonly Window _heading, _controls;
     private readonly TextBlock _title;
     private readonly Action? _toggleCaptions;
-    private Button? _captionsButton;
+    private Button? _captionsButton, _pauseButton, _muteButton;
+    private bool _muted;
     private readonly List<Window> _resizeHandles = new();
     private readonly DispatcherTimer _hover = new(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(120) };
     private bool _attached, _closed, _fitting;
@@ -59,18 +60,18 @@ internal sealed class PictureInPictureWindow : Window
             { if (e.ClickCount == 2) Close(); else if (Mouse.LeftButton == MouseButtonState.Pressed) DragMove(); }
         };
         var controls = new DockPanel { Margin = new Thickness(4, 0, 4, 0) };
-        controls.Children.Add(Button("Ⅱ", pause));
+        _pauseButton = Button("Ⅱ", pause); controls.Children.Add(_pauseButton);
         if (BuildInfo.Engine == "mpv" && toggleCaptions != null) {
             _captionsButton = Button("CC", toggleCaptions);
             _captionsButton.ToolTip = "Toggle closed captions (C)";
             SetCaptionsEnabled(captionsEnabled); controls.Children.Add(_captionsButton);
         }
-        bool muted = false;
-        var muteButton = Button("Mute", () => { });
-        muteButton.Click += (_, _) => { muted = !muted; muteButton.Content = muted ? "Unmute" : "Mute"; mute(muted); };
+        _muted = false;
+        var muteButton = Button("Mute", () => { }); _muteButton = muteButton;
+        muteButton.Click += (_, _) => { _muted = !_muted; muteButton.Content = _muted ? "Unmute" : "Mute"; ToggleVisual.SetIsActive(muteButton, _muted); mute(_muted); };
         controls.Children.Add(muteButton);
         var slider = new Slider { Minimum = 0, Maximum = 100, Value = volume, MinWidth = 48, Margin = new Thickness(8, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
-        slider.ValueChanged += (_, e) => { if (muted) { muted = false; muteButton.Content = "Mute"; } setVolume((int)e.NewValue); };
+        slider.ValueChanged += (_, e) => { if (_muted) { _muted = false; muteButton.Content = "Mute"; ToggleVisual.SetIsActive(muteButton, false); } setVolume((int)e.NewValue); };
         controls.Children.Add(slider); _controls = Overlay(controls, 44);
         SourceInitialized += (_, _) => HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.AddHook(WindowMessage);
         LocationChanged += (_, _) => PositionOverlays();
@@ -109,6 +110,12 @@ internal sealed class PictureInPictureWindow : Window
         };
         Closed += (_, _) => { _closed = true; _hover.Stop(); _heading.Close(); _controls.Close(); foreach (var grip in _resizeHandles) grip.Close(); };
     }
+    internal void SetPlaybackState(bool paused, bool muted)
+    {
+        _muted = muted;
+        if (_pauseButton != null) ToggleVisual.SetIsActive(_pauseButton, paused);
+        if (_muteButton != null) { ToggleVisual.SetIsActive(_muteButton, muted); _muteButton.Content = muted ? "Unmute" : "Mute"; }
+    }
     private static Button Button(string text, Action action)
     {
         var button = new Button { Content = text, Margin = new Thickness(2), Padding = new Thickness(8, 4, 8, 4),
@@ -136,7 +143,7 @@ internal sealed class PictureInPictureWindow : Window
     }
     internal void SetCaptionsEnabled(bool enabled)
     {
-        if (_captionsButton != null) _captionsButton.Content = enabled ? "CC: On" : "CC: Off";
+        if (_captionsButton != null) { _captionsButton.Content = enabled ? "CC: On" : "CC: Off"; ToggleVisual.SetIsActive(_captionsButton, enabled); }
     }
     internal void SetChannelTitle(string text) { Title = "HN-IPTV — " + text; _title.Text = text; }
     internal void SetAspect(double aspect)

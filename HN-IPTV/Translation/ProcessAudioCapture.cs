@@ -1,4 +1,5 @@
 using System.IO;
+using HnIptv.Translation;
 using System.Runtime.InteropServices;
 using System.Threading.Channels;
 namespace HnIptv;
@@ -8,7 +9,7 @@ namespace HnIptv;
 internal sealed class ProcessAudioCapture : IAsyncDisposable
 {
     private readonly CancellationTokenSource _stop = new();
-    private readonly Channel<byte[]> _chunks = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(1) {
+    private readonly Channel<byte[]> _chunks = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(4) {
         FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true, SingleWriter = true });
     private Task _capture = Task.CompletedTask;
     internal ChannelReader<byte[]> Chunks => _chunks.Reader;
@@ -44,8 +45,7 @@ internal sealed class ProcessAudioCapture : IAsyncDisposable
             capture = (IAudioCaptureClient)raw;
             client.Start();
             ready.TrySetResult();
-            using var samples = new MemoryStream();
-            byte[] previous = [];
+            var samples = new SpeechAudioBuffer();
             while (!_stop.IsCancellationRequested)
             {
                 capture.GetNextPacketSize(out uint frames);
@@ -57,19 +57,11 @@ internal sealed class ProcessAudioCapture : IAsyncDisposable
                         int size = checked((int)frames * 4);
                         var bytes = new byte[size];
                         if ((flags & 2) == 0 && data != IntPtr.Zero) Marshal.Copy(data, bytes, 0, size);
-                        samples.Write(bytes);
+                        var segment = samples.Append(bytes);
+                        if (segment != null) _chunks.Writer.TryWrite(ToWave(segment));
                     }
                     finally { capture.ReleaseBuffer(frames); }
                     capture.GetNextPacketSize(out frames);
-                }
-                if (samples.Length >= 176400 * 5)
-                {
-                    var current = samples.ToArray();
-                    var segment = new byte[previous.Length + current.Length];
-                    previous.CopyTo(segment, 0); current.CopyTo(segment, previous.Length);
-                    _chunks.Writer.TryWrite(ToWave(segment));
-                    previous = current.TakeLast(176400).ToArray(); // one second of context, bounded
-                    samples.SetLength(0);
                 }
                 _stop.Token.WaitHandle.WaitOne(25);
             }

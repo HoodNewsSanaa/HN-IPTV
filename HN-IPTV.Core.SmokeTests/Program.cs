@@ -347,7 +347,22 @@ try {
     var savedTranslation = HnIptv.Translation.TranslationSettings.Load(translationFile);
     Check(savedTranslation.InputLanguage == "ja" && savedTranslation.OutputLanguage == "es" && savedTranslation.Acceleration == "cuda", "manual translation languages and GPU preference persist");
 } finally { File.Delete(translationFile); }
-Console.WriteLine("Translation settings and stale-result cancellation checks passed.");
+var captionHistory = new HnIptv.Translation.CaptionHistory();
+Check(captionHistory.Append("Hello world.") == "Hello world.", "initial caption");
+Check(captionHistory.Append("") == "Hello world.", "empty inference preserves readable caption");
+Check(captionHistory.Append("World! Here is the news.") == "Hello world. Here is the news.", "caption overlap retains context");
+captionHistory.Clear(); Check(captionHistory.Append("New channel") == "New channel", "channel reset clears caption history");
+var segmenter = new HnIptv.Translation.SpeechAudioBuffer();
+byte[] voicedPacket = new byte[HnIptv.Translation.SpeechAudioBuffer.BytesPerSecond / 10];
+for (int i = 0; i < voicedPacket.Length; i += 2) { voicedPacket[i] = 0; voicedPacket[i + 1] = 10; }
+byte[]? speechSegment = null;
+for (int i = 0; i < 35; i++) speechSegment = segmenter.Append(voicedPacket);
+Check(speechSegment?.Length == HnIptv.Translation.SpeechAudioBuffer.BytesPerSecond * 7 / 2, "continuous speech is emitted within 3.5 seconds");
+for (int i = 0; i < 15; i++) segmenter.Append(voicedPacket);
+byte[] silence = new byte[voicedPacket.Length];
+for (int i = 0; i < 3; i++) speechSegment = segmenter.Append(silence);
+Check(speechSegment != null && speechSegment.Length > HnIptv.Translation.SpeechAudioBuffer.BytesPerSecond * 2, "phrase segmentation carries overlap across a pause");
+Console.WriteLine("Translation settings, caption continuity, phrase segmentation and stale-result cancellation checks passed.");
 
 static void Check(bool condition, string name)
 {

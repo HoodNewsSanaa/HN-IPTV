@@ -231,14 +231,14 @@ internal sealed class PlaybackController
                         var array = Marshal.PtrToStructure<MpvByteArray>(node.Value); pixels = array.Data; bytes = checked((long)array.Size);
                     }
                 }
-                if (width <= 0 || height <= 0 || width > 8192 || height > 8192 ||
-                    stride < width * 4 || (long)stride * height > 128L * 1024 * 1024 ||
-                    bytes < (long)stride * height || pixels == IntPtr.Zero) return null;
-                var data = new byte[stride * height]; Marshal.Copy(pixels, data, 0, data.Length);
+                // mpv can return bottom-up frames; preserve small text at up to 1080p.
+                var data = VideoFrameCopy.Bgra(pixels, width, height, stride, bytes);
+                if (data == null) return null;
+                stride = width * 4;
                 var bitmap = System.Windows.Media.Imaging.BitmapSource.Create(width, height, 96, 96,
                     System.Windows.Media.PixelFormats.Bgra32, null, data, stride);
                 bitmap.Freeze();
-                double scale = Math.Min(1, Math.Min(1280d / width, 720d / height));
+                double scale = Math.Min(1, Math.Min(1920d / width, 1080d / height));
                 if (scale < 1) {
                     var scaled = new System.Windows.Media.Imaging.TransformedBitmap(bitmap,
                         new System.Windows.Media.ScaleTransform(scale, scale));

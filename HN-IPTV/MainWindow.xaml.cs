@@ -444,12 +444,14 @@ public partial class MainWindow : Window
         GroupSearchBox.Visibility = GroupSearchBox.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
         if (GroupSearchBox.Visibility == Visibility.Visible) GroupSearchBox.Focus();
         else GroupSearchBox.Clear();
+        RenderToggleStates();
     }
     private void ChannelSearchToggle_Click(object sender, RoutedEventArgs e)
     {
         SearchBox.Visibility = SearchBox.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
         if (SearchBox.Visibility == Visibility.Visible) SearchBox.Focus();
         else SearchBox.Clear();
+        RenderToggleStates();
     }
     private void GroupSearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
@@ -708,6 +710,7 @@ public partial class MainWindow : Window
         SelectedChannelTitle.Text = channel.Name;
         SelectedChannelCategory.Text = channel.GroupName + "  •  Channel " + channel.NumberLabel;
         FavoriteButton.Content = channel.IsFavorite ? "★  Favorited" : "☆  Favorite";
+        RenderToggleStates();
         if ((_source == SourceKind.Xtream && _xtream is null && HasNoCachedGuide(channel)) ||
             (_source == SourceKind.M3u && string.IsNullOrWhiteSpace(_activePlaylist?.EpgSource) && HasNoCachedGuide(channel)))
         {
@@ -745,7 +748,7 @@ public partial class MainWindow : Window
         if (!forceRetry && _failedTunes.ContainsKey(failureKey))
         { SetStatus("This channel failed recently. Press Play to retry now."); return; }
         if (!recovery) { CancelRecovery(); _recovery.Reset(); _recoveryExhausted = false; }
-        _userPaused = false; _lastProgress = -1; _progressAge.Restart();
+        _userPaused = false; _lastProgress = -1; _progressAge.Restart(); RenderToggleStates();
         CancelAndClear(ref _tuneCts);
         var cts = recovery && _recoveryCts != null
             ? CancellationTokenSource.CreateLinkedTokenSource(_recoveryCts.Token) : new CancellationTokenSource();
@@ -796,13 +799,14 @@ public partial class MainWindow : Window
 
     private async void Pause_Click(object sender, RoutedEventArgs e)
     {
-        try { await _playback.PauseAsync(); _userPaused = !_userPaused; if (_userPaused) CancelRecovery(); _progressAge.Restart(); } catch (Exception ex) { App.LogException("playback.pause", ex); }
+        try { await _playback.PauseAsync(); _userPaused = !_userPaused; if (_userPaused) CancelRecovery(); _progressAge.Restart(); RenderToggleStates(); } catch (Exception ex) { App.LogException("playback.pause", ex); }
     }
     private async Task StopPlaybackAsync()
     {
         CancelRecovery();
         var translationStop = StopTranslationSessionAsync();
         _tuneGeneration++; _tuneSubmitted = false; _tuneWatch = null; _playingChannel = null;
+        _userPaused = false; RenderToggleStates();
         _infoTimer.Stop(); _streamInfo = StreamInfo.Empty; RenderStreamInfo();
         try { await _playback.StopAsync(); } catch (Exception ex) { App.LogException("playback.stop", ex); }
         await translationStop;
@@ -826,6 +830,7 @@ public partial class MainWindow : Window
         _preferences.SetFavorite(_providerKey, channel);
         if (ReferenceEquals(_selectedChannel, channel))
             FavoriteButton.Content = channel.IsFavorite ? "★  Favorited" : "☆  Favorite";
+        RenderToggleStates();
         SavePreferences();
         if ((GroupsList.SelectedItem as ChannelGroup)?.Id == "fav") RefreshChannels();
     }
@@ -834,6 +839,7 @@ public partial class MainWindow : Window
     {
         if (_closing) return;
         _muted = false;
+        RenderToggleStates();
         _volumeDebounce.Stop(); _volumeDebounce.Start();
     }
 
@@ -858,6 +864,7 @@ public partial class MainWindow : Window
         System.Windows.Automation.AutomationProperties.SetName(CaptionsButton,
             _playerSettings.CaptionsEnabled ? "Closed captions on" : "Closed captions off");
         _pip?.SetCaptionsEnabled(_playerSettings.CaptionsEnabled);
+        RenderToggleStates();
     }
     private async Task ToggleCaptionsAsync()
     {
@@ -881,6 +888,7 @@ public partial class MainWindow : Window
     {
         StreamInfoPanel.Visibility = StreamInfoPanel.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
         StreamInfoButton.Content = StreamInfoPanel.Visibility == Visibility.Visible ? "Hide info" : "Info";
+        RenderToggleStates();
         RenderStreamInfo();
         if (StreamInfoPanel.Visibility == Visibility.Visible) { _infoTimer.Start(); _ = UpdateStreamInfoAsync(); }
     }
@@ -949,7 +957,7 @@ public partial class MainWindow : Window
         {
             var pip = new PictureInPictureWindow(VideoView, _playerSettings, (int)VolumeSlider.Value,
                 () => Pause_Click(this, new RoutedEventArgs()),
-                async muted => { try { await _playback.VolumeAsync(muted ? 0 : (int)VolumeSlider.Value); } catch (Exception ex) { App.LogException("pip.mute", ex); } },
+                async muted => { _muted = muted; RenderToggleStates(); try { await _playback.VolumeAsync(muted ? 0 : (int)VolumeSlider.Value); } catch (Exception ex) { App.LogException("pip.mute", ex); } },
                 value => VolumeSlider.Value = value,
                 settings =>
                 {
@@ -958,12 +966,14 @@ public partial class MainWindow : Window
                     SavePlayerSettings();
                 }, () => _ = ToggleCaptionsAsync(), _playerSettings.CaptionsEnabled);
             _pip = pip;
+            RenderToggleStates();
             pip.SetChannelTitle(_playingChannel?.Name ?? "HN-IPTV");
             pip.SetAspect(_streamInfo.AspectRatio);
             _infoTimer.Start();
             pip.Closed += async (_, _) =>
             {
                 _pip = null;
+                RenderToggleStates();
                 ResetTranslationOverlay();
                 try
                 {
@@ -971,7 +981,7 @@ public partial class MainWindow : Window
                     {
                         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
                         Activate();
-                        await _playback.VolumeAsync((int)VolumeSlider.Value);
+                        await _playback.VolumeAsync(_muted ? 0 : (int)VolumeSlider.Value);
                     }
                 }
                 catch (Exception ex) { App.LogException("pip.volume", ex); }
@@ -1007,6 +1017,7 @@ public partial class MainWindow : Window
 
     private void ToggleFullscreen()
     {
+        bool entering = !_isFullScreen;
         if (_pip != null) { _pip.Close(); if (_pip != null) return; }
         if (!_isFullScreen)
         {
@@ -1055,7 +1066,8 @@ public partial class MainWindow : Window
         }
         else
         {
-            _fullscreenControls?.Close(); _fullscreenControls = null;
+            _isFullScreen = false;
+            var closedControls = _fullscreenControls; _fullscreenControls = null; closedControls?.Close();
             Topmost = _oldTopmost;
             WindowState = WindowState.Normal;
             WindowStyle = _oldWindowStyle;
@@ -1078,7 +1090,8 @@ public partial class MainWindow : Window
             PlayerGuideRow.Height = new GridLength(2, GridUnitType.Star);
             PlayerControlsRow.Height = GridLength.Auto;
         }
-        _isFullScreen = !_isFullScreen;
+        _isFullScreen = entering;
+        RenderToggleStates();
         if (_isFullScreen) { Focus(); Keyboard.Focus(this); }
     }
 
@@ -1176,6 +1189,7 @@ public partial class MainWindow : Window
     private void ToggleMute()
     {
         _muted = !_muted;
+        RenderToggleStates();
         _ = ApplyMuteAsync();
     }
     private async Task ApplyMuteAsync()
@@ -1552,7 +1566,7 @@ public partial class MainWindow : Window
         await StopTranslationSessionAsync();
         _translationOverlay?.Close(); _translationOverlay = null;
         CancelRecovery(); _updateCts.Cancel();
-        _fullscreenControls?.Close(); _fullscreenControls = null;
+        var closedControls = _fullscreenControls; _fullscreenControls = null; closedControls?.Close();
         if (_pip != null) { _pip.Close(); if (_pip != null) { _closing = false; return; } }
         TopBar.IsEnabled = false;
         _epgClock.Stop(); _refreshTimer.Stop(); _saveSelectionDebounce.Stop(); _infoTimer.Stop(); _volumeDebounce.Stop();

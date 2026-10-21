@@ -65,7 +65,7 @@
                         <Grid Margin="10,4,0,11">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                             <TextBlock Text="CHANNEL GROUPS" FontSize="11" Foreground="#8B9DB4" FontWeight="Bold" VerticalAlignment="Center"/>
-                            <Button Grid.Column="1" Content="⌕" FontSize="20" Padding="8,2" ToolTip="Search visible channel groups" Click="GroupSearchToggle_Click"/>
+                            <Button x:Name="GroupSearchButton" Grid.Column="1" Content="⌕" FontSize="20" Padding="8,2" ToolTip="Search visible channel groups" Click="GroupSearchToggle_Click"/>
                             <Button Grid.Column="2" Content="⚙" FontSize="18" Padding="8,2" ToolTip="Hide/show entire channel groups" Click="GroupOptions_Click"/>
                         </Grid>
                         <TextBox x:Name="GroupSearchBox" Visibility="Collapsed" Background="#233147" Foreground="White"
@@ -89,7 +89,7 @@
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                             <TextBlock x:Name="ChannelGroupHeading" Text="ALL CHANNELS" FontWeight="Bold" FontSize="15" VerticalAlignment="Center"/>
                             <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                <Button Content="⌕" FontSize="22" Padding="8,4" ToolTip="Search channels in the selected group"
+                                <Button x:Name="ChannelSearchButton" Content="⌕" FontSize="22" Padding="8,4" ToolTip="Search channels in the selected group"
                                         Click="ChannelSearchToggle_Click"/>
                             </StackPanel>
                         </Grid>
@@ -210,10 +210,10 @@
                 </Grid>
                 <WrapPanel Grid.Row="4" x:Name="PlaybackButtons" Margin="0,8,0,0">
                     <Button Content="▶ Play" Click="Play_Click" Margin="0,3,5,3"/>
-                    <Button Content="Ⅱ Pause" Click="Pause_Click" Margin="0,3,5,3"/>
+                    <Button x:Name="PauseButton" Content="Ⅱ Pause" Click="Pause_Click" Margin="0,3,5,3"/>
                     <Button Content="■ Stop" Click="Stop_Click" Margin="0,3,5,3"/>
-                    <Button Content="⛶" ToolTip="Fullscreen (F)" Click="Fullscreen_Click" Margin="0,3,5,3"/>
-                    <Button Content="PiP" ToolTip="Floating picture in picture (P)" Click="Pip_Click" Margin="0,3,5,3"/>
+                    <Button x:Name="FullscreenButton" Content="⛶" ToolTip="Fullscreen (F)" Click="Fullscreen_Click" Margin="0,3,5,3"/>
+                    <Button x:Name="PipButton" Content="PiP" ToolTip="Floating picture in picture (P)" Click="Pip_Click" Margin="0,3,5,3"/>
                     <Button Content="CC: Off" x:Name="CaptionsButton" Click="Captions_Click" ToolTip="Toggle closed captions (C), when supplied by the channel" Margin="0,3,5,3"/>
                     <Button x:Name="TranslateSpeechButton" Content="Translate speech" Click="TranslateSpeech_Click" ToolTip="Translate this player's audio entirely on this PC" Margin="0,3,5,3"/>
                     <Button x:Name="TranslateScreenButton" Content="Translate text" Click="TranslateScreen_Click" ToolTip="Read and translate visible text from the video only" Margin="0,3,5,3"/>
@@ -225,6 +225,7 @@
                         <ComboBoxItem Content="Balanced" Tag="1200"/>
                         <ComboBoxItem Content="Resilient" Tag="3000"/>
                     </ComboBox>
+                    <Button x:Name="MuteButton" Content="Mute" Click="Mute_Click" ToolTip="Mute (M)" Margin="0,3,5,3"/>
                     <Slider x:Name="VolumeSlider" Width="75" Minimum="0" Maximum="100" Value="85" TickFrequency="10" Margin="2,3,0,3"
                             ValueChanged="VolumeSlider_ValueChanged" VerticalAlignment="Center" ToolTip="Volume"/>
                 </WrapPanel>

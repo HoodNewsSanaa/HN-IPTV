@@ -235,6 +235,36 @@ def setup(root, source_codes, target, size, speech_only=False, device="cpu"):
     temp.replace(ready)
     print("Local translation models are ready.", flush=True)
 
+
+def ocr_lines(rows, source):
+    """Join words on the same baseline; Arabic-family text reads right to left."""
+    lines = []
+    for box, text, confidence in sorted(rows, key=lambda row: min(p[1] for p in row[0])):
+        x0, x1 = min(p[0] for p in box), max(p[0] for p in box)
+        y0, y1 = min(p[1] for p in box), max(p[1] for p in box)
+        center, height = (y0 + y1) / 2, max(1, y1 - y0)
+        line = next((r for r in reversed(lines) if abs(r["y"] - center) <= max(r["height"], height) * 0.55), None)
+        if line is None:
+            line = {"y": center, "height": height, "words": []}
+            lines.append(line)
+        line["words"].append((x0, x1, text))
+    output = []
+    for line in sorted(lines, key=lambda r: r["y"]):
+        rtl = source in ("ar", "fa", "ur", "he") or any(re.search(r"[\u0590-\u08ff]", word[2]) for word in line["words"])
+        words = sorted(line["words"], key=lambda item: item[0], reverse=rtl)
+        output.append(" ".join(word[2] for word in words))
+    return output
+
+def word_key(word):
+    return re.sub(r"[^\w]", "", word.casefold())
+
+def speech_delta(previous, current):
+    words, old = current.split(), previous.split()
+    for count in range(min(len(old), len(words), 30), 0, -1):
+        if [word_key(x) for x in old[-count:]] == [word_key(x) for x in words[:count]]:
+            return " ".join(words[count:])
+    return current
+
 class Engine:
     def __init__(self, root, size, device="cpu"):
         self.root = Path(root)
@@ -246,6 +276,7 @@ class Engine:
         self.cache = OrderedDict()
         self.last_language = None
         self.last_speech = ""
+        self.screen_snapshot = None
         self.ready = json.loads((self.root / "ready.json").read_text("utf-8"))
 
     def execute(self, action):
@@ -259,6 +290,7 @@ class Engine:
             self.speech = None
             self.readers.clear()
             self.translators.clear()
+            self.screen_snapshot = None
             gc.collect()
             try:
                 import torch
@@ -321,6 +353,47 @@ class Engine:
             self.cache.popitem(last=False)
         return result
 
+
+    def ensure_speech(self):
+        from faster_whisper import WhisperModel
+        if self.speech is None:
+            self.speech = WhisperModel(str(self.root / "speech" / self.size), device=self.device,
+                compute_type="int8_float16" if self.device == "cuda" else "int8", cpu_threads=max(1, min(4, (os.cpu_count() or 2) // 2)),
+                num_workers=1, local_files_only=True)
+
+    def reader(self, group):
+        if group not in self.readers:
+            import easyocr
+            self.readers[group] = easyocr.Reader(OCR_GROUPS[group], gpu=self.device == "cuda",
+                model_storage_directory=str(self.root / "ocr"),
+                user_network_directory=str(self.root / "ocr-user"),
+                download_enabled=False, verbose=False)
+            while len(self.readers) > 2:
+                self.readers.popitem(last=False)
+        self.readers.move_to_end(group)
+        return self.readers[group]
+
+    def prepare(self, kind, source, target):
+        def load():
+            if kind == "audio":
+                import numpy as np
+                self.ensure_speech()
+                segments, _ = self.speech.transcribe(np.zeros(16000, dtype=np.float32),
+                    language="en", beam_size=1, vad_filter=False)
+                list(segments)  # Initialize feature extraction and CUDA before capturing live audio.
+            else:
+                import numpy as np
+                groups = [ocr_group(source)] if source != "auto" else self.ready.get("ocr_groups", [])
+                if not groups:
+                    raise ValueError("Prepare screen-text models in Translation settings.")
+                for group in groups:
+                    if group not in self.ready.get("ocr_groups", []):
+                        raise ValueError("Install the " + group + " screen-text model in Translation settings.")
+                    self.reader(group).readtext(np.zeros((64, 256, 3), dtype=np.uint8),
+                        canvas_size=256, workers=0)
+            return {"text": "", "source": source, "target": target}
+        return self.execute(load)
+
     def audio(self, payload, source, target):
         return self.execute(lambda: self._audio(payload, source, target))
 
@@ -328,10 +401,7 @@ class Engine:
         from faster_whisper import WhisperModel
         import numpy as np
         import wave
-        if self.speech is None:
-            self.speech = WhisperModel(str(self.root / "speech" / self.size), device=self.device,
-                compute_type="int8_float16" if self.device == "cuda" else "int8", cpu_threads=max(1, min(4, (os.cpu_count() or 2) // 2)),
-                num_workers=1, local_files_only=True)
+        self.ensure_speech()
         with wave.open(io.BytesIO(payload), "rb") as wav:
             if wav.getnchannels() != 2 or wav.getsampwidth() != 2 or wav.getframerate() != 44100:
                 raise ValueError("Expected app loopback stereo PCM16 at 44100 Hz")
@@ -341,70 +411,86 @@ class Engine:
         signal = np.interp(np.arange(0, len(signal), 44100 / 16000), np.arange(len(signal)), signal).astype(np.float32)
         segments, info = self.speech.transcribe(signal, language=None if source == "auto" else source,
             task="translate" if target == "en" else "transcribe",
-            beam_size=5 if self.device == "cuda" else 3, condition_on_previous_text=False, vad_filter=False,
+            beam_size=3 if self.device == "cuda" else 2, condition_on_previous_text=False, vad_filter=False,
             no_speech_threshold=0.65, temperature=0)
         text = " ".join(s.text.strip() for s in segments if s.no_speech_prob < 0.65).strip()
         detected = normalize(info.language)
         self.last_language = detected
         if target != "en":
             text = self.translate(text, detected, target)
-        # The audio windows overlap by one second. Remove repeated word prefixes.
-        words = text.split()
-        old = self.last_speech.split()
-        for size in range(min(len(old), len(words), 20), 0, -1):
-            if [x.casefold() for x in old[-size:]] == [x.casefold() for x in words[:size]]:
-                words = words[size:]
-                break
-        self.last_speech = text
-        return {"text": " ".join(words), "source": detected, "target": target}
+        # Punctuation can change between overlapping windows. Keep captions continuous.
+        delta = speech_delta(self.last_speech, text)
+        if text:
+            self.last_speech = text
+        return {"text": delta, "source": detected, "target": target}
 
     def screen(self, payload, source, target):
         return self.execute(lambda: self._screen(payload, source, target))
 
     def _screen(self, payload, source, target):
-        import easyocr
         import numpy as np
         from PIL import Image
         from langdetect import detect, DetectorFactory
         DetectorFactory.seed = 0
         image = Image.open(io.BytesIO(payload)).convert("RGB")
-        image.thumbnail((1280, 720))
+        image.thumbnail((1920, 1080))
         installed = self.ready.get("ocr_groups", [])
         groups = [ocr_group(source)] if source != "auto" else installed
         if not groups:
             raise ValueError("Install screen-text models in Translation settings.")
-        best = []
-        best_score = 0
+        now = time.monotonic()
+        key = (source, target, image.size)
+        previous = self.screen_snapshot
+        if previous and previous["key"] == key and now - previous["at"] < 3:
+            # Moving video outside the text does not require recognizing identical captions again.
+            unchanged = bool(previous["patches"])
+            for rectangle, before in previous["patches"]:
+                after = np.asarray(image.crop(rectangle).convert("L").resize((96, 24)), dtype=np.float32)
+                if float(np.mean(np.abs(after - before))) > 5:
+                    unchanged = False
+                    break
+            if unchanged:
+                cached = dict(previous["result"]); cached["cached"] = True
+                return cached
+        best, best_score = [], 0
         for group in groups:
             if group not in installed:
                 raise ValueError("Install the " + group + " screen-text model in Translation settings.")
-            if group not in self.readers:
-                self.readers[group] = easyocr.Reader(OCR_GROUPS[group], gpu=self.device == "cuda",
-                    model_storage_directory=str(self.root / "ocr"),
-                    user_network_directory=str(self.root / "ocr-user"),
-                    download_enabled=False, verbose=False)
-                while len(self.readers) > 2:
-                    self.readers.popitem(last=False)
-            found = self.readers[group].readtext(np.asarray(image), detail=1, paragraph=False,
-                canvas_size=1280, batch_size=1, workers=0)
-            good = [(box, text, float(conf)) for box, text, conf in found if conf >= 0.45 and len(text.strip()) > 1]
+            found = self.reader(group).readtext(np.asarray(image), detail=1, paragraph=False,
+                canvas_size=1920, batch_size=8 if self.device == "cuda" else 1, workers=0,
+                text_threshold=0.6, low_text=0.3, contrast_ths=0.2, adjust_contrast=0.7)
+            good = [(box, text.strip(), float(conf)) for box, text, conf in found
+                    if conf >= 0.3 and len(text.strip()) > 1 and any(c.isalpha() for c in text)]
             score = sum(min(len(text), 40) * conf for _, text, conf in good)
             if score > best_score:
-                best = good
-                best_score = score
-        lines = [text for _, text, _ in sorted(best, key=lambda row: (row[0][0][1], row[0][0][0]))]
-        text = "\n".join(lines[:10])[:1500]
-        if not text:
-            return {"text": "", "source": source, "target": target}
-        if source == "auto":
-            try:
-                detected = normalize(detect(text))
-            except Exception:
-                detected = self.last_language or "en"
-        else:
-            detected = source
-        translated = self.translate(text, detected, target)
-        return {"text": translated, "source": detected, "target": target}
+                best, best_score = good, score
+        lines = ocr_lines(best, source)
+        translated, detected = [], source
+        installed_inputs = self.ready.get("inputs", [])
+        for line in lines[:16]:
+            if source == "auto":
+                try:
+                    detected = normalize(detect(line))
+                except Exception:
+                    detected = self.last_language or (installed_inputs[0] if len(installed_inputs) == 1 else "en")
+                if re.search(r"[\u0600-\u06ff]", line) and detected not in installed_inputs:
+                    detected = next((x for x in installed_inputs if x in ("ar", "fa", "ur")), detected)
+            else:
+                detected = source
+            # The Arabic/etc. recognizer also reads Latin station logos. They are already English.
+            if detected in ("ar", "fa", "ur", "ru", "ja", "ko", "zh") and re.search(r"[a-zA-Z]", line) and not re.search(r"[^\x00-\x7f]", line):
+                detected = "en"
+            if detected == target:
+                continue
+            translated.append(self.translate(line[:1000], detected, target))
+        result = {"text": "\n".join(translated[-6:])[:1500], "source": detected, "target": target}
+        patches = []
+        for box, _, _ in best:
+            rectangle = (max(0, int(min(p[0] for p in box))), max(0, int(min(p[1] for p in box))),
+                         min(image.width, int(max(p[0] for p in box)) + 1), min(image.height, int(max(p[1] for p in box)) + 1))
+            patches.append((rectangle, np.asarray(image.crop(rectangle).convert("L").resize((96, 24)), dtype=np.float32)))
+        self.screen_snapshot = {"key": key, "at": time.monotonic(), "patches": patches, "result": dict(result)}
+        return result
 
 def run(root, size, device="auto"):
     block_network()
@@ -413,7 +499,7 @@ def run(root, size, device="auto"):
     protocol = sys.stdout
     sys.stdout = sys.stderr
     for line in sys.stdin:
-        if len(line) > 8 * 1024 * 1024:
+        if len(line) > 16 * 1024 * 1024:
             break
         try:
             request = json.loads(line)
@@ -423,7 +509,15 @@ def run(root, size, device="auto"):
                 raise ValueError("Unsupported language code")
             payload = base64.b64decode(request["data"], validate=True)
             with contextlib.redirect_stdout(sys.stderr):
-                result = engine.audio(payload, source, target) if request["kind"] == "audio" else engine.screen(payload, source, target)
+                kind = request["kind"]
+                if kind.startswith("prepare_"):
+                    result = engine.prepare(kind.removeprefix("prepare_"), source, target)
+                elif kind == "audio":
+                    result = engine.audio(payload, source, target)
+                elif kind == "screen":
+                    result = engine.screen(payload, source, target)
+                else:
+                    raise ValueError("Unknown translation request")
             result["id"] = request["id"]
         except Exception as error:
             result = {"id": request.get("id", 0) if "request" in locals() else 0,

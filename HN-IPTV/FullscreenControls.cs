@@ -13,6 +13,8 @@ internal sealed class FullscreenControls : Window
     private readonly Window _home;
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(120) };
     private Point _last;
+    private bool _closed, _updating;
+    private Button? _captions, _speech, _screen, _mute, _pause;
     private readonly Action _exit;
     internal bool ControlsVisible => IsVisible;
     private readonly Stopwatch _idle = Stopwatch.StartNew();
@@ -23,14 +25,14 @@ internal sealed class FullscreenControls : Window
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; SizeToContent = SizeToContent.WidthAndHeight;
         Background = new SolidColorBrush(Color.FromRgb(24, 35, 56));
         var panel = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(8) };
-        void Add(string label, Action action) {
+        Button Add(string label, Action action) {
             var button = new Button { Content = label, Margin = new Thickness(4), Padding = new Thickness(10, 5, 10, 5) };
-            button.Click += (_, _) => action(); panel.Children.Add(button);
+            button.Click += (_, _) => action(); panel.Children.Add(button); return button;
         }
-        Add("Play", play); Add("Pause", pause); Add("Stop", stop); Add("Mute (M)", mute);
-        if (BuildInfo.Engine == "mpv") Add("CC", captions);
-        if (translateSpeech != null) Add("Translate speech", translateSpeech);
-        if (translateText != null && BuildInfo.Engine == "mpv") Add("Translate text", translateText);
+        Add("Play", play); _pause = Add("Pause", pause); Add("Stop", stop); _mute = Add("Mute (M)", mute);
+        if (BuildInfo.Engine == "mpv") _captions = Add("CC", captions);
+        if (translateSpeech != null) _speech = Add("Translate speech", translateSpeech);
+        if (translateText != null && BuildInfo.Engine == "mpv") _screen = Add("Translate text", translateText);
         var slider = new Slider { Minimum = 0, Maximum = 100, Value = initialVolume, Width = 90,
             VerticalAlignment = VerticalAlignment.Center, ToolTip = "Volume" };
         slider.ValueChanged += (_, e) => volume((int)e.NewValue);
@@ -44,28 +46,33 @@ internal sealed class FullscreenControls : Window
         _timer.Tick += (_, _) => Tick();
         _home.Activated += HomeActivated;
         _home.Deactivated += HomeDeactivated;
+        Closing += (_, _) => { _closed = true; _timer.Stop(); };
         Closed += (_, _) => { _timer.Stop(); _home.Activated -= HomeActivated; _home.Deactivated -= HomeDeactivated; };
         _timer.Start();
     }
     private void HomeActivated(object? sender, EventArgs e) => Reveal();
     private void HomeDeactivated(object? sender, EventArgs e) => Dispatcher.BeginInvoke(new Action(() => {
-        if (!_home.IsActive && !IsActive && IsVisible) Hide();
+        if (!_closed && !_home.IsActive && !IsActive && IsVisible) Hide();
     }));
     internal void Reveal()
     {
+        if (_closed) return;
         _idle.Restart();
         Tick();
     }
     private void Tick()
     {
+        if (_closed || _updating) return;
+        _updating = true;
+        try {
         if (!_home.IsVisible || _home.WindowState == WindowState.Minimized || (!_home.IsActive && !IsActive))
         { if (IsVisible) Hide(); return; }
-        if (!GetCursorPos(out var cursor)) return;
+        if (PresentationSource.FromVisual(_home)?.CompositionTarget == null || !GetCursorPos(out var cursor)) return;
         var position = _home.PointFromScreen(new Point(cursor.X, cursor.Y));
         bool inside = position.X >= 0 && position.Y >= 0 && position.X < _home.ActualWidth && position.Y < _home.ActualHeight;
         if (inside && position != _last) { _last = position; _idle.Restart(); }
         bool show = IsMouseOver || IsKeyboardFocusWithin || _idle.Elapsed < TimeSpan.FromSeconds(3);
-        if (show && !IsVisible) Show();
+        if (show && !_closed && !IsVisible) Show();
         else if (!show && IsVisible) Hide();
         if (IsVisible) {
             var point = _home.PointToScreen(new Point(Math.Max(0, (_home.ActualWidth - ActualWidth) / 2),
@@ -73,6 +80,16 @@ internal sealed class FullscreenControls : Window
             var transform = PresentationSource.FromVisual(_home)?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
             var location = transform.Transform(point); Left = location.X; Top = location.Y;
         }
+        }
+        catch (InvalidOperationException) when (_closed) { }
+        finally { _updating = false; }
+    }
+    internal void SetToggleStates(bool captions, bool speech, bool screen, bool muted, bool paused)
+    {
+        if (_closed) return;
+        foreach (var (button, active) in new[] { (_captions, captions), (_speech, speech), (_screen, screen), (_mute, muted), (_pause, paused) })
+            if (button != null) ToggleVisual.SetIsActive(button, active);
+        if (_captions != null) _captions.Content = captions ? "CC: On" : "CC: Off";
     }
     [StructLayout(LayoutKind.Sequential)] private struct CursorPoint { public int X, Y; }
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)]

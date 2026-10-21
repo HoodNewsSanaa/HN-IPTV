@@ -15,7 +15,9 @@ public partial class MainWindow
     private readonly SemaphoreSlim _translationGate = new(1, 1);
     private Task _speechTranslation = Task.CompletedTask, _screenTranslation = Task.CompletedTask;
     private ProcessAudioCapture? _audioCapture;
-    private LocalTranslationWorker? _speechWorker, _screenWorker;
+    private LocalTranslationWorker? _translationWorker;
+    private bool _audioInference;
+    private long _emptyScreenMessageAt;
     private static string TranslationSettingsPath => Path.Combine(AppStorage.DataDirectory, "translation-settings.json");
 
     private void InitializeTranslation()
@@ -48,6 +50,7 @@ public partial class MainWindow
         TranslateSpeechButton.Content = _translateSpeech ? "Speech: On" : "Translate speech";
         TranslateScreenButton.Content = _translateScreen ? "Text: On" : "Translate text";
         TranslateScreenButton.IsEnabled = BuildInfo.Engine == "mpv";
+        RenderToggleStates();
     }
     private async void TranslationSettings_Click(object sender, RoutedEventArgs e)
     {
@@ -90,11 +93,28 @@ public partial class MainWindow
             await StopTranslationResourcesAsync();
             if (!_translationGeneration.IsCurrent(generation) || _closing ||
                 (!_translateSpeech && !_translateScreen) || _playingChannel == null || !LocalTranslationRuntime.Ready) return;
-            _translationOverlay ??= CreateTranslationOverlay();
+            if (_translationOverlay == null || _translationOverlay.IsClosed) _translationOverlay = CreateTranslationOverlay();
             _translationOverlay.Clear();
             var session = new CancellationTokenSource();
             _translationSession = session;
             var settings = _translationSettings;
+            var worker = new LocalTranslationWorker(settings);
+            _translationWorker = worker;
+            _translationOverlay.SetMessage("Preparing local translation models…", 90);
+            // One process shares a CUDA context. Warm up before loopback starts so startup cannot drop speech.
+            foreach (var mode in new[] { "screen", "audio" })
+            {
+                if (mode == "audio" ? !_translateSpeech : !_translateScreen) continue;
+                var prepared = await worker.TranslateAsync("prepare_" + mode, [], settings, session.Token);
+                if (session.IsCancellationRequested || !_translationGeneration.IsCurrent(generation)) return;
+                if (prepared.Error != null) {
+                    if (mode == "audio") _translateSpeech = false; else _translateScreen = false;
+                    ApplyTranslation(prepared, mode == "audio");
+                    RenderTranslationButtons();
+                }
+            }
+            if (!_translateSpeech && !_translateScreen) { await StopTranslationResourcesAsync(); return; }
+            _translationOverlay.SetMessage("Local translation ready.", 3);
             if (_translateSpeech)
             {
                 var capture = new ProcessAudioCapture();
@@ -102,25 +122,28 @@ public partial class MainWindow
                 try {
                     await capture.StartAsync();
                     if (session.IsCancellationRequested) return;
-                    var worker = new LocalTranslationWorker(settings); _speechWorker = worker;
                     _speechTranslation = TranslateAudioLoopAsync(capture, worker, settings, generation, session.Token);
                 }
+                catch (OperationCanceledException) when (session.IsCancellationRequested) { return; }
                 catch (Exception ex) {
                     App.LogException("translation.audio.start", ex);
-                    SetStatus("Could not capture this app's audio. Speech translation needs Windows 11 or build 20348 and newer.");
+                    _translationOverlay.SetMessage("Could not capture this app's audio.", 8);
                     _translateSpeech = false; RenderTranslationButtons();
                     await capture.DisposeAsync(); _audioCapture = null;
                 }
             }
 #if USE_MPV
             if (_translateScreen && !session.IsCancellationRequested)
-            {
-                var worker = new LocalTranslationWorker(settings); _screenWorker = worker;
                 _screenTranslation = TranslateVideoLoopAsync(worker, settings, generation, session.Token);
-            }
 #endif
         }
-        catch (Exception ex) { App.LogException("translation.start", ex); SetStatus("Local translation could not start. Check Translation settings."); }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) {
+            App.LogException("translation.start", ex); SetStatus("Local translation could not start. Check Translation settings.");
+            _translationOverlay?.SetMessage("Local translation could not start. Check Translation settings.", 10);
+            _translateSpeech = _translateScreen = false; RenderTranslationButtons();
+            await StopTranslationResourcesAsync();
+        }
         finally { _translationGate.Release(); }
     }
     private async Task TranslateAudioLoopAsync(ProcessAudioCapture capture, LocalTranslationWorker worker,
@@ -130,46 +153,46 @@ public partial class MainWindow
             await foreach (var chunk in capture.Chunks.ReadAllAsync(ct))
             {
                 if (_userPaused) continue;
-                var result = await worker.TranslateAsync("audio", chunk, settings, ct);
+                _audioInference = true;
+                TranslationResult result;
+                try { result = await worker.TranslateAsync("audio", chunk, settings, ct); }
+                finally { _audioInference = false; }
                 if (ct.IsCancellationRequested || !_translationGeneration.IsCurrent(generation)) return;
                 ApplyTranslation(result, true);
             }
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) { if (!ct.IsCancellationRequested) { App.LogException("translation.audio", ex); SetStatus("Speech translation stopped. Check the local models in Translation settings."); } }
+        catch (Exception ex) { if (!ct.IsCancellationRequested) { App.LogException("translation.audio", ex); TranslationFailed(true, "Speech translation stopped. Check the local models in Translation settings."); } }
     }
 #if USE_MPV
     private async Task TranslateVideoLoopAsync(LocalTranslationWorker worker, TranslationSettings settings,
         long generation, CancellationToken ct)
     {
-        string? lastFrame = null;
-        string lastScreenText = "";
         try {
             while (!ct.IsCancellationRequested)
             {
-                if (!_userPaused && (!_minimized || _pip != null))
+                var cycle = System.Diagnostics.Stopwatch.StartNew();
+                if ((!_minimized || _pip != null) && !_audioInference)
                 {
-                    var frame = await _playback.CaptureVideoFrameAsync(ct);
+                    byte[]? frame = null;
+                    try { frame = await _playback.CaptureVideoFrameAsync(ct); }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex) {
+                        App.LogException("translation.screen.capture", ex);
+                        _translationOverlay?.SetMessage("Video frame unavailable; retrying…");
+                    }
                     if (frame != null)
                     {
-                        string digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(frame));
-                        if (digest != lastFrame)
-                        {
-                            lastFrame = digest;
-                            var result = await worker.TranslateAsync("screen", frame, settings, ct);
-                            if (ct.IsCancellationRequested || !_translationGeneration.IsCurrent(generation)) return;
-                            lastScreenText = result.Error == null ? result.Text : "";
-                            ApplyTranslation(result, false);
-                        }
-                        else _translationOverlay?.SetScreen(lastScreenText);
+                        var result = await worker.TranslateAsync("screen", frame, settings, ct);
+                        if (ct.IsCancellationRequested || !_translationGeneration.IsCurrent(generation)) return;
+                        ApplyTranslation(result, false);
                     }
                 }
-                else if (_userPaused) _translationOverlay?.SetScreen(lastScreenText);
-                await Task.Delay(2000, ct);
+                await Task.Delay(Math.Max(200, 1000 - (int)cycle.ElapsedMilliseconds), ct);
             }
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) { if (!ct.IsCancellationRequested) { App.LogException("translation.screen", ex); SetStatus("Screen translation stopped. Check the installed language models."); } }
+        catch (Exception ex) { if (!ct.IsCancellationRequested) { App.LogException("translation.screen", ex); TranslationFailed(false, "Screen translation stopped. Check Translation settings."); } }
     }
 #endif
     private void ApplyTranslation(TranslationResult result, bool speech)
@@ -177,7 +200,7 @@ public partial class MainWindow
         if (_closing) return;
         if (result.Error != null) {
             SetStatus(result.Error);
-            if (speech) _translationOverlay?.SetSpeech(""); else _translationOverlay?.SetScreen("");
+            _translationOverlay?.SetMessage(result.Error, 10);
             return;
         }
         string backend = result.Backend + result.Notice;
@@ -185,21 +208,35 @@ public partial class MainWindow
             _translationBackend = backend;
             SetStatus("Local translation: " + result.Backend + (result.Notice == null ? "." : ". " + result.Notice));
         }
-        if (speech) _translationOverlay?.SetSpeech(result.Text); else _translationOverlay?.SetScreen(result.Text);
+        if (speech) _translationOverlay?.SetSpeech(result.Text);
+        else {
+            _translationOverlay?.SetScreen(result.Text);
+            if (string.IsNullOrWhiteSpace(result.Text) && (_emptyScreenMessageAt == 0 ||
+                System.Diagnostics.Stopwatch.GetElapsedTime(_emptyScreenMessageAt).TotalSeconds > 15)) {
+                _emptyScreenMessageAt = System.Diagnostics.Stopwatch.GetTimestamp();
+                _translationOverlay?.SetMessage("Scanning video: no readable foreign-language text found.", 3);
+            }
+        }
+    }
+    private void TranslationFailed(bool speech, string message)
+    {
+        SetStatus(message); _translationOverlay?.SetMessage(message, 10);
+        if (speech) _translateSpeech = false; else _translateScreen = false;
+        RenderTranslationButtons();
+        Dispatcher.BeginInvoke(new Action(() => { if (!_closing) _ = RestartTranslationAsync(); }));
     }
     private async Task StopTranslationSessionAsync()
     {
         _translationGeneration.Advance();
         CancelAndClear(ref _translationSession);
-        _translationOverlay?.Close(); _translationOverlay = null;
+        var overlay = _translationOverlay; _translationOverlay = null; overlay?.Close();
         await _translationGate.WaitAsync();
         try { await StopTranslationResourcesAsync(); }
         finally { _translationGate.Release(); }
     }
     private async Task StopTranslationResourcesAsync()
     {
-        if (_speechWorker != null) { await _speechWorker.DisposeAsync(); _speechWorker = null; }
-        if (_screenWorker != null) { await _screenWorker.DisposeAsync(); _screenWorker = null; }
+        if (_translationWorker != null) { await _translationWorker.DisposeAsync(); _translationWorker = null; }
         if (_audioCapture != null) { await _audioCapture.DisposeAsync(); _audioCapture = null; }
         try { await Task.WhenAll(_speechTranslation, _screenTranslation).WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
         _speechTranslation = _screenTranslation = Task.CompletedTask;

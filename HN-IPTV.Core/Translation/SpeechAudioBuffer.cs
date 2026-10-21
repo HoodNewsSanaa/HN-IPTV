@@ -1,0 +1,29 @@
+using System.IO;
+using System.Runtime.InteropServices;
+namespace HnIptv.Translation;
+
+// Phrase boundaries reduce cut words; a hard limit keeps continuous speech responsive.
+public sealed class SpeechAudioBuffer
+{
+    public const int BytesPerSecond = 176400;
+    private readonly MemoryStream _pending = new();
+    private byte[] _context = [];
+    private int _quietBytes;
+    public byte[]? Append(ReadOnlySpan<byte> pcm)
+    {
+        _pending.Write(pcm);
+        long energy = 0;
+        var samples = MemoryMarshal.Cast<byte, short>(pcm);
+        foreach (short sample in samples) energy += (long)sample * sample;
+        _quietBytes = samples.Length == 0 || energy / Math.Max(1, samples.Length) < 4096 ? _quietBytes + pcm.Length : 0;
+        if (_pending.Length < BytesPerSecond * 3.5 &&
+            (_pending.Length < BytesPerSecond * 1.5 || _quietBytes < BytesPerSecond * 0.3)) return null;
+        var current = _pending.ToArray();
+        var segment = new byte[_context.Length + current.Length];
+        _context.CopyTo(segment, 0); current.CopyTo(segment, _context.Length);
+        int tail = Math.Min(current.Length, BytesPerSecond * 3 / 4);
+        _context = current.AsSpan(current.Length - tail).ToArray();
+        _pending.SetLength(0); _quietBytes = 0;
+        return segment;
+    }
+}
