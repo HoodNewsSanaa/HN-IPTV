@@ -26,7 +26,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: {name: opus-model-package, path: model-package}
       - name: Publish immutable optional model pack
-        env: {GH_TOKEN: ${{ github.token }}}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if ! gh release view translation-models-v1 >/dev/null 2>&1; then
             gh release create translation-models-v1 model-package/opus-ar-en-ct2-f16.zip model-package/model-manifest.json model-package/SHA256SUMS.txt --prerelease --latest=false --title "Optional offline translation models v1" --notes "Pinned Helsinki-NLP OPUS-MT Arabic to English, Apache-2.0. Standalone CTranslate2 float16 weights; CPU/GPU compatible. License and source revision included. Downloaded once by HN-IPTV model setup; this is not an application update."
