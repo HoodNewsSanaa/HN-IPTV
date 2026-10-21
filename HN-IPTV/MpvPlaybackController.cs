@@ -16,6 +16,8 @@ internal sealed class PlaybackController
     private long _nextCommand;
     private bool _disposed, _paused, _captionsEnabled;
     private volatile bool _playing;
+    private Action<string>? _testLog;
+    internal Task TraceForTestAsync(Action<string> callback)=>RunAsync(()=>{_testLog=callback;if(_handle!=IntPtr.Zero)Check(Native.mpv_request_log_messages(_handle,"warn"));});
     public event Action? PlaybackError;
 
     private async Task RunAsync(Action action, CancellationToken ct = default)
@@ -176,6 +178,9 @@ internal sealed class PlaybackController
                     if (entry.Error < 0) completion.TrySetException(new InvalidOperationException($"mpv command failed ({entry.Error})."));
                     else completion.TrySetResult();
                 }
+                else if(entry.Id==2 && entry.Data!=IntPtr.Zero && _testLog!=null) {
+                    string message=Marshal.PtrToStringUTF8(Marshal.ReadIntPtr(entry.Data,2*IntPtr.Size))??"";_testLog(message.Trim());
+                }
                 else if (entry.Id == 8) _playing = true; // FILE_LOADED
                 else if (entry.Id == 7) // END_FILE; the first two fields are reason/error.
                 {
@@ -275,6 +280,7 @@ internal sealed class PlaybackController
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr mpv_get_property_string(IntPtr handle, [MarshalAs(UnmanagedType.LPUTF8Str)] string name);
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern void mpv_free(IntPtr pointer);
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr mpv_create();
+        [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern int mpv_request_log_messages(IntPtr handle,[MarshalAs(UnmanagedType.LPUTF8Str)] string level);
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern int mpv_initialize(IntPtr handle);
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern void mpv_terminate_destroy(IntPtr handle);
         [DllImport(Library, CallingConvention = CallingConvention.Cdecl)] public static extern IntPtr mpv_wait_event(IntPtr handle, double timeout);

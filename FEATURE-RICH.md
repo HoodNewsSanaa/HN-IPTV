@@ -20,7 +20,9 @@ Screen-text OCR translation has been retired as part of removing the old local l
 
 Click Translate speech and choose Live, Generous time — 10 seconds, or Generous time — 15 seconds (recommended). The choice is also in Translation settings.
 
-Generous time uses one incoming media feed. It extracts recognition audio ahead of playback, translates roughly eight-second dialogue groups through Azure, and delays original video and audio together. Captions use Nemotron's source word timestamps and the player's media clock. Translated paragraphs are split into compact cues proportionally across their source speech interval; this is phrase-level synchronization, not exact translated-word alignment.
+Generous time uses one incoming media feed. It extracts recognition audio ahead of playback, translates groups of roughly 6–12 seconds, preferring completed utterances through Azure, and delays original video and audio together. Captions use Nemotron's source word timestamps and the player's media clock. Translated paragraphs are split into compact cues proportionally across their source speech interval; this is phrase-level synchronization, not exact translated-word alignment.
+
+The 10-second option caps groups at eight seconds to leave processing headroom. The 15-second option permits up to 12 seconds of context.
 
 The rolling playlist exposes media only after its lead time and completed translation. If processing falls behind, playback waits/refills rather than showing late captions. Source/network latency, segment boundaries and translation delays can make the actual delay longer than the selected 10 or 15 seconds. Azure failures stop buffered translation and return to live playback with an error.
 

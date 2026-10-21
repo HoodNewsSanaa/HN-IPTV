@@ -9,6 +9,7 @@ public partial class MainWindow
 {
     private TranslationSettings _translationSettings=new();
     private TranslationOverlay? _translationOverlay;
+    private readonly TimedCaptions _bufferedCaptions=new();
     private bool _translateSpeech;
     private const bool _translateScreen=false;
     private CancellationTokenSource? _translationSession;
@@ -38,7 +39,7 @@ public partial class MainWindow
         };
         Activated+=(_,_)=>{if(_isFullScreen){_fullscreenControls?.Reveal();Dispatcher.BeginInvoke(DispatcherPriority.Input,new Action(()=>{if(_isFullScreen&&IsActive){Focus();System.Windows.Input.Keyboard.Focus(this);}}));}};
     }
-    private TranslationOverlay CreateTranslationOverlay()=>new(()=>_pip==null?(this,VideoView):(_pip,_pip.VideoHost),()=>_streamInfo.AspectRatio){ControlsWindow=()=>_pip==null&&_isFullScreen?_fullscreenControls:null};
+    private TranslationOverlay CreateTranslationOverlay()=>new(()=>_pip==null?(this,VideoView):(_pip,_pip.VideoHost),()=>_streamInfo.AspectRatio){ControlsWindow=()=>_pip==null&&_isFullScreen?_fullscreenControls:null,SpeechSchedule=_bufferedCaptions,SpeechPlaybackClock=_bufferedTranslation==null?null:()=>_streamInfo.PositionMilliseconds>=0?_streamInfo.PositionMilliseconds/1000d:null};
     private void ResetTranslationOverlay()
     {
         var previous=_translationOverlay;_translationOverlay=null;try{previous?.Close();}catch(InvalidOperationException){}
@@ -63,7 +64,8 @@ public partial class MainWindow
     }
     private async void TranslateSpeech_Click(object sender,RoutedEventArgs e)
     {
-        if(!_translateSpeech&&(!LocalTranslationRuntime.Ready||string.IsNullOrWhiteSpace(AzureTranslationCredentials.Load()))){SetStatus("Prepare Nemotron and enter the Azure key in Translation settings.");TranslationSettings_Click(this,new RoutedEventArgs());return;}
+        bool keyReady=false;try{keyReady=!string.IsNullOrWhiteSpace(AzureTranslationCredentials.Load());}catch(Exception ex){App.LogException("translation.key",ex);}
+        if(!_translateSpeech&&(!LocalTranslationRuntime.Ready||!keyReady)){SetStatus("Prepare Nemotron and enter the Azure key in Translation settings.");TranslationSettings_Click(this,new RoutedEventArgs());return;}
         if(!_translateSpeech) {
             var mode=new TranslationModeDialog(_translationSettings.BufferSeconds,BuildInfo.Engine=="mpv"){Owner=this};
             if(mode.ShowDialog()!=true)return;
@@ -161,10 +163,11 @@ public partial class MainWindow
         }
         try {
             await foreach(var chunk in buffered.Chunks.ReadAllAsync(ct)) {
-                through=chunk.AudioEndSeconds;Collect(await worker.RecognizeAsync(chunk.Wave,ct));
+                through=chunk.AudioEndSeconds;var recognized=await worker.RecognizeAsync(chunk.Wave,ct);Collect(recognized);
                 if(!_translationGeneration.IsCurrent(generation)||ct.IsCancellationRequested)return;
-                // Whole eight-second groups retain complete recognition clauses and more translation context.
-                if(through-batchStart>=8)await Flush();
+                // Prefer a completed utterance after six seconds; cap a continuous speaker to retain headroom.
+                double maximum=settings.BufferSeconds==10?8:12;
+                if((through-batchStart>=6&&recognized.Any(r=>r.Final&&r.Text.Any(char.IsLetterOrDigit)))||through-batchStart>=maximum)await Flush();
             }
             if(through>batchStart)await Flush();
         }catch(OperationCanceledException){}catch(Exception ex){if(!ct.IsCancellationRequested){App.LogException("translation.buffer.recognition",ex);TranslationFailed("The translated buffer stopped. Retry Translate or choose Live.");}}
@@ -203,6 +206,7 @@ public partial class MainWindow
             await _bufferedTranslation.DisposeAsync();_bufferedTranslation=null;
         }
         if(_translationOverlay!=null)_translationOverlay.SpeechPlaybackClock=null;
+        _bufferedCaptions.Clear();
         bool retained=preserveWorker&&_translationWorker?.CanReuse==true;
         if(!retained&&_translationWorker!=null){await _translationWorker.DisposeAsync();_translationWorker=null;_translationWorkerSettings=null;}
         if(_audioCapture!=null){await _audioCapture.DisposeAsync();_audioCapture=null;}

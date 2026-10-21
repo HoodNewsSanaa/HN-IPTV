@@ -1,7 +1,7 @@
 # 0.13.1 Feature Rich preview
 
 - Offer Live, Generous time (10 seconds), and Generous time (15 seconds, recommended) when enabling Translate. Remember the timing choice.
-- Keep Nemotron recognition and Azure text translation. Generous time recognizes ahead of playback and translates roughly eight-second dialogue groups for more context.
+- Keep Nemotron recognition and Azure text translation. Generous time recognizes ahead of playback and translates longer dialogue groups, preferring completed utterances for more context.
 - Preserve source word timestamps and display compact cues against the media playback clock, including while paused.
 - Use one upstream stream to produce both recognition audio and a local rolling audio/video buffer. Delay both original audio and video together.
 - Expose buffered media only after the chosen lead time and successful translation; refill naturally when processing falls behind.

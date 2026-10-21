@@ -32,8 +32,9 @@ internal static class BufferedPlaybackChecks
             if(ready.IsCompleted)throw new Exception("Video was exposed before translations were ready.");
             Volatile.Write(ref translated,true);source.TranslatedThrough(source.HeadSeconds);
             await ready;
+            Console.WriteLine("BUFFER-READY head="+source.HeadSeconds+" manifest="+File.ReadAllText(source.PlaybackUri.LocalPath));
             if(source.HeadSeconds<12)throw new Exception("Generous mode did not accumulate its lead time.");
-            await controller.StopAsync();await (Task)bufferMode.Invoke(controller,[true])!;
+            await controller.StopAsync();await (Task)typeof(PlaybackController).GetMethod("TraceForTestAsync",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(controller,[(Action<string>)Console.WriteLine])!;await (Task)bufferMode.Invoke(controller,[true])!;
             await controller.PlayAsync(source.PlaybackUri,host.VideoHandle,0,cancel.Token);
             await Until(async()=>{var p=await controller.ProgressAsync();return p.Playing&&p.Time>=1000;},cancel.Token);
             var initial=await controller.ProgressAsync();
@@ -42,12 +43,16 @@ internal static class BufferedPlaybackChecks
             double clock=initial.Time/1000d;
             var timer=new System.Windows.Threading.DispatcherTimer{Interval=TimeSpan.FromMilliseconds(80)};
             timer.Tick+=async(_,_)=>clock=(await controller.ProgressAsync()).Time/1000d;timer.Start();
-            var overlay=new TranslationOverlay(()=>(window,host)){SpeechPlaybackClock=()=>clock};
+            var shared=new HnIptv.Translation.TimedCaptions();
+            var overlay=new TranslationOverlay(()=>(window,host)){SpeechPlaybackClock=()=>clock,SpeechSchedule=shared};
             try {
                 overlay.ScheduleSpeech("A timestamped caption",2,4);
                 await Until(()=>Task.FromResult(overlay.SpeechCaptionVisible),cancel.Token);
                 await controller.PauseAsync();var paused=await controller.ProgressAsync();await Task.Delay(1300,cancel.Token);
                 if(Math.Abs((await controller.ProgressAsync()).Time-paused.Time)>120||!overlay.SpeechCaptionVisible)throw new Exception("Pause changed the media/caption clock.");
+                overlay.Close();overlay=new TranslationOverlay(()=>(window,host)){SpeechPlaybackClock=()=>clock,SpeechSchedule=shared};
+                await Until(()=>Task.FromResult(overlay.SpeechCaptionVisible),cancel.Token);
+                report["generous_caption_overlay_recreation"]=true;
                 await controller.PauseAsync();await Until(()=>Task.FromResult(!overlay.SpeechCaptionVisible),cancel.Token);
             }finally{timer.Stop();overlay.Close();}
             await Until(async()=>(await controller.ProgressAsync()).Time>=8300,cancel.Token);
