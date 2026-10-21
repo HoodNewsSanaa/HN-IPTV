@@ -23,7 +23,8 @@ def prepare():
     print(json.dumps({"available_genders":{str(g):sum(str(x["row"].get("gender"))==str(g) for x in rows) for g in set(x["row"].get("gender") for x in rows)}}),flush=True)
     for item in rows:
         row=item["row"];gender=str(row.get("gender"))
-        if genders.get(gender,0)>=3:continue
+        limit=3 if len(set(str(x["row"].get("gender")) for x in rows))>1 else 6
+        if genders.get(gender,0)>=limit:continue
         audio=row["audio"];src=audio[0]["src"] if isinstance(audio,list) else audio["src"]
         name="ar-"+str(row["id"])+"-"+str(len(selected))+".wav";fetch(src,OUT/name)
         signal,rate=sf.read(OUT/name)
