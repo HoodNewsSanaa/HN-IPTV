@@ -107,7 +107,7 @@ public partial class MainWindow
                 if(!_translationGeneration.IsCurrent(generation)||session.IsCancellationRequested)return;
                 await _playback.TranslationBufferAsync(true);
                 await _playback.PlayAsync(buffered.PlaybackUri,VideoView.VideoHandle,_muted?0:(int)VolumeSlider.Value,session.Token,1200);
-                _streamInfo=HnIptv.Playback.StreamInfo.Empty;_tuneSubmitted=true;_progressAge.Restart();
+                _streamInfo=HnIptv.Playback.StreamInfo.Empty;_tuneSubmitted=true;_progressAge.Restart();_infoTimer.Interval=TimeSpan.FromMilliseconds(100);
                 _translationOverlay.SetMessage("Generous time ready — synchronized playback.",3);
 #else
                 throw new NotSupportedException("Generous time requires the mpv build.");
@@ -199,6 +199,7 @@ public partial class MainWindow
     private async Task StopTranslationResourcesAsync(bool preserveWorker=false,bool restoreLive=false)
     {
         bool hadBuffer=_bufferedTranslation!=null||_bufferPlaybackStopped;_bufferPlaybackStopped=false;
+        if(hadBuffer)_infoTimer.Interval=TimeSpan.FromSeconds(1);
         if(_bufferedTranslation!=null) {
 #if USE_MPV
             await _playback.StopAsync();await _playback.TranslationBufferAsync(false);

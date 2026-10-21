@@ -18,7 +18,7 @@ internal static class BufferedPlaybackChecks
         var bufferMode=typeof(PlaybackController).GetMethod("TranslationBufferAsync",BindingFlags.Instance|BindingFlags.NonPublic)!;
         using var cancel=new CancellationTokenSource(TimeSpan.FromSeconds(70));
         await using(var source=new BufferedTranslationSource(new Uri(fixture),"","",10,cancel.Token)) {
-            string session=Path.GetDirectoryName(source.PlaybackUri.LocalPath)!;
+            string session=Path.GetDirectoryName(source.PlaylistPath)!;
             var ready=source.WaitReadyAsync(cancel.Token);var reached=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             bool translated=false;using var pcm=new MemoryStream();
             var consume=Task.Run(async()=>{
@@ -32,7 +32,7 @@ internal static class BufferedPlaybackChecks
             if(ready.IsCompleted)throw new Exception("Video was exposed before translations were ready.");
             Volatile.Write(ref translated,true);source.TranslatedThrough(source.HeadSeconds);
             await ready;
-            Console.WriteLine("BUFFER-READY head="+source.HeadSeconds+" manifest="+File.ReadAllText(source.PlaybackUri.LocalPath));
+            Console.WriteLine("BUFFER-READY head="+source.HeadSeconds+" manifest="+File.ReadAllText(source.PlaylistPath));
             if(source.HeadSeconds<12)throw new Exception("Generous mode did not accumulate its lead time.");
             await controller.StopAsync();await (Task)typeof(PlaybackController).GetMethod("TraceForTestAsync",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(controller,[(Action<string>)Console.WriteLine])!;await (Task)bufferMode.Invoke(controller,[true])!;
             await controller.PlayAsync(source.PlaybackUri,host.VideoHandle,0,cancel.Token);

@@ -921,7 +921,7 @@ public partial class MainWindow : Window
             if (StreamInfoPanel.Visibility == Visibility.Visible) RenderStreamInfo();
             if (_tuneWatch != null && info.Playing && info.PositionMilliseconds > 0) {
                 App.LogDiagnostic($"playback.time_to_progress_ms={_tuneWatch.Elapsed.TotalMilliseconds:F1}");
-                _tuneWatch = null; _infoTimer.Interval = TimeSpan.FromSeconds(1);
+                _tuneWatch = null; _infoTimer.Interval = TimeSpan.FromMilliseconds(_bufferedTranslation!=null?100:1000);
                 SetStatus("Playing " + _playingChannel?.Name + ".");
             }
         } catch (Exception ex) { App.LogException("playback.info", ex); }
