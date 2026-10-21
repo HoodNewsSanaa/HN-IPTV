@@ -2,7 +2,7 @@
 import array,ctypes as c,hashlib,json,math,os,re,sys,time,urllib.request,wave
 from pathlib import Path
 root=Path(sys.argv[1]).resolve()
-dlls=list((root/'sdk').rglob('*asr*.dll'));assert len(dlls)==1,dlls
+dlls=list((root/'sdk').rglob('nemo_speech_asr_c.dll'));assert len(dlls)==1,dlls
 handles=[os.add_dll_directory(str(p)) for p in set(x.parent for x in (root/'sdk').rglob('*.dll'))]
 lib=c.CDLL(str(dlls[0]))
 class Backend(c.Structure):_fields_=[('size',c.c_size_t),('gpu',c.c_int32)]
