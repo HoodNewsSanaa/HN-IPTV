@@ -1,5 +1,5 @@
 """Public FLEURS fixtures only. No credentials, user audio or cloud translation."""
-import tarfile,zipfile,io
+import tarfile,zipfile,io,struct
 import array,ctypes as c,hashlib,json,math,os,re,sys,time,urllib.request,wave
 from pathlib import Path
 root=Path(sys.argv[1]).resolve()
@@ -83,10 +83,15 @@ try:
                         row={'transcription':labels[Path(member.name).name]}
                         break
                 else:raise AssertionError('No public test audio')
-        with wave.open(str(audio),'rb') as wav:
-            assert wav.getsampwidth()==2
-            rate=wav.getframerate();channels=wav.getnchannels();raw=array.array('h',wav.readframes(wav.getnframes()))
-            samples=[sum(raw[i:i+channels])/channels/32768 for i in range(0,len(raw),channels)]
+        blob=audio.read_bytes();offset=12;pcm=b'';fmt=rate=channels=bits=0
+        while offset+8<=len(blob):
+            tag=blob[offset:offset+4];size=struct.unpack_from('<I',blob,offset+4)[0];part=blob[offset+8:offset+8+size]
+            if tag==b'fmt ':fmt,channels,rate,_,_,bits=struct.unpack_from('<HHIIHH',part)
+            if tag==b'data':pcm=part
+            offset+=8+size+(size%2)
+        assert (fmt,bits) in [(1,16),(3,32)],(fmt,bits)
+        raw=array.array('h' if fmt==1 else 'f',pcm)
+        samples=[sum(raw[i:i+channels])/channels/(32768 if fmt==1 else 1) for i in range(0,len(raw),channels)]
         for selected in [language,'auto']:
             result=run(samples,rate,selected);result.update(language=selected,fixture=config_name,reference=row['transcription'],wer=wer(row['transcription'],result['text']))
             report['samples'].append(result);print(json.dumps(result,ensure_ascii=True),flush=True)
