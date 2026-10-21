@@ -20,8 +20,8 @@ public sealed class SpeechAudioBuffer
         var samples = MemoryMarshal.Cast<byte, short>(pcm);
         foreach (short sample in samples) energy += (long)sample * sample;
         _quietBytes = samples.Length == 0 || energy / Math.Max(1, samples.Length) < 4096 ? _quietBytes + pcm.Length : 0;
-        if (_pending.Length < BytesPerSecond * 2.5 &&
-            (_pending.Length < BytesPerSecond * 1.0 || _quietBytes < BytesPerSecond * 0.25)) return null;
+        if (_pending.Length < BytesPerSecond * 1.5 &&
+            (_pending.Length < BytesPerSecond * 0.8 || _quietBytes < BytesPerSecond * 0.2)) return null;
         LastContextSeconds = (double)_context.Length / BytesPerSecond;
         var current = _pending.ToArray();
         var segment = new byte[_context.Length + current.Length];

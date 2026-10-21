@@ -11,7 +11,7 @@
     <Product>HN-IPTV</Product>
     <AssemblyTitle>HN-IPTV</AssemblyTitle>
     <Company>HN-IPTV</Company>
-    <Version>0.12.2</Version>
+    <Version>0.12.3</Version>
     <PlaybackEngine Condition="'$(PlaybackEngine)' == ''">mpv</PlaybackEngine>
     <PlatformTarget>x64</PlatformTarget>
     <VlcWindowsX64Enabled>true</VlcWindowsX64Enabled>

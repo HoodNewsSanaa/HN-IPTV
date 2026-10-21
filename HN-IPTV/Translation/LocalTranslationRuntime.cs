@@ -139,6 +139,10 @@ internal sealed class LocalTranslationWorker : IAsyncDisposable
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Task _errors;
     private readonly AzureTranslatorClient? _azure;
+    private volatile bool _faulted;
+    internal bool CanReuse {
+        get { try { return !_faulted && _gate.CurrentCount == 1 && !_process.HasExited; } catch (InvalidOperationException) { return false; } }
+    }
     internal LocalTranslationWorker(TranslationSettings settings, AzureTranslatorClient? azure = null)
     {
         if (settings.Provider == "azure")
@@ -220,6 +224,7 @@ internal sealed class LocalTranslationWorker : IAsyncDisposable
                 root.TryGetProperty("frame_height", out var fh) ? fh.GetInt32() : 0,
                 root.TryGetProperty("replace_speech", out var replace) && replace.GetBoolean(), cues);
         }
+        catch { _faulted = true; throw; }
         finally { _gate.Release(); }
     }
     public async ValueTask DisposeAsync()

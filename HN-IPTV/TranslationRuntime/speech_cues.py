@@ -36,7 +36,8 @@ class SpeechCueCommitter:
             group.append(word)
             sentence_end = bool(re.search(r"[.!?؟…][\"'»”)]*$", word["text"]))
             length_limit = len(group) >= 12 or sum(len(w["text"])+1 for w in group) >= 90
-            if sentence_end or length_limit:
+            clause_end = len(group) >= 4 and bool(re.search(r"[,;:\u060c\u061b][\\\"\u00bb\u201d)]*$", word["text"]))
+            if sentence_end or clause_end or length_limit:
                 phrases.append(group); group = []
         if group and final and len(ready) == len(words):
             phrases.append(group)

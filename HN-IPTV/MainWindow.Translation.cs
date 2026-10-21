@@ -16,6 +16,7 @@ public partial class MainWindow
     private Task _speechTranslation = Task.CompletedTask, _screenTranslation = Task.CompletedTask;
     private ProcessAudioCapture? _audioCapture;
     private LocalTranslationWorker? _translationWorker;
+    private TranslationSettings? _translationWorkerSettings;
     private bool _audioInference;
     private long _emptyScreenMessageAt;
     private static string TranslationSettingsPath => Path.Combine(AppStorage.DataDirectory, "translation-settings.json");
@@ -92,7 +93,8 @@ public partial class MainWindow
         await _translationGate.WaitAsync();
         try
         {
-            await StopTranslationResourcesAsync();
+            await StopTranslationResourcesAsync(preserveWorker: !_closing && (_translateSpeech || _translateScreen) &&
+                _playingChannel != null && ReferenceEquals(_translationWorkerSettings,_translationSettings));
             if (!_translationGeneration.IsCurrent(generation) || _closing ||
                 (!_translateSpeech && !_translateScreen) || _playingChannel == null || !LocalTranslationRuntime.Ready) return;
             if (_translationOverlay == null || _translationOverlay.IsClosed) _translationOverlay = CreateTranslationOverlay();
@@ -100,11 +102,24 @@ public partial class MainWindow
             var session = new CancellationTokenSource();
             _translationSession = session;
             var settings = _translationSettings;
-            var worker = new LocalTranslationWorker(settings);
-            _translationWorker = worker;
-            _translationOverlay.SetMessage("Preparing local translation models…", 90);
-            // One process shares a CUDA context. Warm up before loopback starts so startup cannot drop speech.
-            foreach (var mode in new[] { "screen", "audio" })
+            var worker = _translationWorker ?? new LocalTranslationWorker(settings);
+            bool reused = _translationWorker != null;
+            _translationWorker = worker; _translationWorkerSettings = settings;
+            if (reused) await worker.TranslateAsync("reset",[],settings,session.Token);
+            _translationOverlay.SetMessage(reused ? "Resuming translation…" : "Preparing recognition; buffering this app's audio…",90);
+            // Capture overlaps model loading. The bounded queue keeps current context instead of waiting to record.
+            if (_translateSpeech) {
+                var capture = new ProcessAudioCapture(); _audioCapture = capture;
+                try { await capture.StartAsync(); }
+                catch (OperationCanceledException) when (session.IsCancellationRequested) { return; }
+                catch (Exception ex) {
+                    App.LogException("translation.audio.start",ex);
+                    _translationOverlay.SetMessage("Could not capture this app's audio.",8);
+                    _translateSpeech = false; RenderTranslationButtons();
+                    await capture.DisposeAsync(); _audioCapture = null;
+                }
+            }
+            foreach (var mode in new[] { "audio", "screen" })
             {
                 if (mode == "audio" ? !_translateSpeech : !_translateScreen) continue;
                 var prepared = await worker.TranslateAsync("prepare_" + mode, [], settings, session.Token);
@@ -114,26 +129,12 @@ public partial class MainWindow
                     ApplyTranslation(prepared, mode == "audio");
                     RenderTranslationButtons();
                 }
+                else if (mode == "audio" && _audioCapture != null)
+                    _speechTranslation = TranslateAudioLoopAsync(_audioCapture,worker,settings,generation,session.Token);
             }
+            if (!_translateSpeech && _audioCapture != null) { await _audioCapture.DisposeAsync(); _audioCapture = null; }
             if (!_translateSpeech && !_translateScreen) { await StopTranslationResourcesAsync(); return; }
             _translationOverlay.SetMessage(settings.Provider == "azure" ? "Azure text translation ready." : "Local translation ready.", 3);
-            if (_translateSpeech)
-            {
-                var capture = new ProcessAudioCapture();
-                _audioCapture = capture;
-                try {
-                    await capture.StartAsync();
-                    if (session.IsCancellationRequested) return;
-                    _speechTranslation = TranslateAudioLoopAsync(capture, worker, settings, generation, session.Token);
-                }
-                catch (OperationCanceledException) when (session.IsCancellationRequested) { return; }
-                catch (Exception ex) {
-                    App.LogException("translation.audio.start", ex);
-                    _translationOverlay.SetMessage("Could not capture this app's audio.", 8);
-                    _translateSpeech = false; RenderTranslationButtons();
-                    await capture.DisposeAsync(); _audioCapture = null;
-                }
-            }
 #if USE_MPV
             if (_translateScreen && !session.IsCancellationRequested)
                 _screenTranslation = TranslateVideoLoopAsync(worker, settings, generation, session.Token);
@@ -245,11 +246,19 @@ public partial class MainWindow
         try { await StopTranslationResourcesAsync(); }
         finally { _translationGate.Release(); }
     }
-    private async Task StopTranslationResourcesAsync()
+    private async Task StopTranslationResourcesAsync(bool preserveWorker = false)
     {
-        if (_translationWorker != null) { await _translationWorker.DisposeAsync(); _translationWorker = null; }
+        bool retained = preserveWorker && _translationWorker?.CanReuse == true;
+        if (!retained && _translationWorker != null) {
+            await _translationWorker.DisposeAsync(); _translationWorker = null; _translationWorkerSettings = null;
+        }
         if (_audioCapture != null) { await _audioCapture.DisposeAsync(); _audioCapture = null; }
         try { await Task.WhenAll(_speechTranslation, _screenTranslation).WaitAsync(TimeSpan.FromSeconds(5)); } catch { }
+        // A cancellation after sending a request can leave unread protocol data. Never reuse that process.
+        if (retained && _translationWorker?.CanReuse != true && _translationWorker != null) {
+            await _translationWorker.DisposeAsync(); _translationWorker = null; _translationWorkerSettings = null;
+        }
         _speechTranslation = _screenTranslation = Task.CompletedTask;
+        _audioInference = false;
     }
 }

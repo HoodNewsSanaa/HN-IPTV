@@ -182,6 +182,35 @@ class WorkerTests(unittest.TestCase):
                 engine.translate("source","ar","en")
             self.assertFalse(engine.cache)
 
+    def test_gpu_detection_uses_ctranslate_without_importing_torch(self):
+        import types
+        fake_ct2 = types.SimpleNamespace(get_cuda_device_count=lambda:1)
+        with patch.dict(sys.modules, {"ctranslate2":fake_ct2}), patch.object(worker,"cuda_libraries_ready",return_value=True):
+            self.assertEqual(worker.select_device("cuda"),("cuda",None))
+
+    def test_prepared_models_survive_reset_but_old_channel_captions_do_not(self):
+        import types
+        with tempfile.TemporaryDirectory() as temp:
+            Path(temp,"ready.json").write_text("{}")
+            engine=worker.Engine(temp,"tiny",text_model="azure")
+            calls=[]
+            model=types.SimpleNamespace(transcribe=lambda *a,**k:(calls.append("warm") or [],None))
+            engine.speech=model
+            engine.ensure_speech=lambda:None
+            fake_numpy=types.SimpleNamespace(zeros=lambda *a,**k:[],float32=float)
+            fake_vad=types.SimpleNamespace(get_speech_timestamps=lambda *a,**k:[],VadOptions=lambda **k:k)
+            with patch.dict(sys.modules,{"numpy":fake_numpy,"faster_whisper.vad":fake_vad}):
+                engine.prepare("audio","en","es")
+                engine.cue_committer.previous=[dict(text="old",start=0,end=1,probability=1)]
+                engine.last_language="ar";engine.screen_snapshot={"old":True}
+                engine.reset()
+                engine.prepare("audio","en","es")
+            self.assertEqual(calls,["warm"])
+            self.assertIs(engine.speech,model)
+            self.assertFalse(engine.cue_committer.pending())
+            self.assertIsNone(engine.last_language)
+            self.assertIsNone(engine.screen_snapshot)
+
     def test_missing_pack_is_reported_instead_of_using_a_cloud_service(self):
         with tempfile.TemporaryDirectory() as temp:
             Path(temp, "ready.json").write_text("{}")

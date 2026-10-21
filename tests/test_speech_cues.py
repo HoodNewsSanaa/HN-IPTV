@@ -25,6 +25,10 @@ class CueTests(unittest.TestCase):
         c=SpeechCueCommitter();w=words(["Uncertain."]);w[0]["probability"]=.2
         c.update(w,2,0,True)
         self.assertEqual(c.update(w,3,0,True),[])
+    def test_confirmed_clause_can_send_before_twelve_words(self):
+        c=SpeechCueCommitter();w=words(["The","storm","arrived","today,","and","continues"])
+        self.assertEqual(c.update(w,4,0),[])
+        self.assertEqual(c.update(w,5,0),["The storm arrived today,"])
     def test_cues_are_short_and_have_finite_reading_times(self):
         cues=split_cues(" ".join(["translation"]*40))
         self.assertGreater(len(cues),1)

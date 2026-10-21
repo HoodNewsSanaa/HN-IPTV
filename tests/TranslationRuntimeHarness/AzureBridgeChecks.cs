@@ -46,6 +46,11 @@ internal static class AzureBridgeChecks
             int firstCalls=calls;
             await Request(selected);
             if(calls!=firstCalls)throw new Exception("Repeated screen text consumed Azure requests twice.");
+            var reset=await (Task<TranslationResult>)method.Invoke(worker,new object?[]{"reset",Array.Empty<byte>(),selected,CancellationToken.None,0d,null})!;
+            if(reset.Error!=null || !(bool)type.GetProperty("CanReuse",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(worker)!)
+                throw new Exception("An idle worker could not be reset for channel reuse.");
+            await Request(selected);
+            if(calls!=firstCalls)throw new Exception("Warm worker reset discarded the Azure text cache.");
             deny=true;
             result=await Request(selected with {OutputLanguage="fr"});
             if(result.Error==null || !result.Error.Contains("key",StringComparison.OrdinalIgnoreCase) || result.Error.Contains("synthetic-bridge-key"))

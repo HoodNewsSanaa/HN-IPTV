@@ -1,4 +1,4 @@
-# HN-IPTV Feature Rich preview — 0.12.2
+# HN-IPTV Feature Rich preview — 0.12.3
 
 Branch: `HN-IPTV-Feature-Rich`. Stable main remains separate.
 
@@ -26,7 +26,7 @@ The [benchmark report](TRANSLATION-BENCHMARKS.md) explains why turbo + VAD and O
 
 Silero VAD checks fresh audio for speech before recognition. Low-confidence/repetitive recognition segments are suppressed. Auto can retain a confident detected language briefly, with periodic redetection; a manual language is useful for noisy or short clips. Optional **Reduce steady background noise** applies conservative spectral attenuation, off by default because filtering can also damage recognition.
 
-Captions refresh at phrase boundaries or every 2.5 seconds of continuous audio. Up to 12.5 seconds of preceding audio provides sentence context. Source words are confirmed across overlapping recognition passes before translation. Confirmed phrases become compact, timed pop-on cues rather than a repeatedly rewritten rolling paragraph. Each cue expires after its reading interval; a bounded queue discards stale cues. Confirmation adds processing delay and cannot guarantee correct recognition or translation. Only the newest queued segment is retained; stale queued audio is skipped. Caption delay includes collecting audio, model processing and UI scheduling. Simultaneous speakers, accents, music and quiet speech remain difficult.
+Captions refresh at phrase boundaries or every 1.5 seconds of continuous audio. Up to 12.5 seconds of preceding audio provides sentence context. Source words are confirmed across overlapping recognition passes before translation. Confirmed phrases become compact, timed pop-on cues rather than a repeatedly rewritten rolling paragraph. Each cue expires after its reading interval; a bounded queue discards stale cues. Confirmation adds processing delay and cannot guarantee correct recognition or translation. Only the newest queued segment is retained; stale queued audio is skipped. Audio capture starts during model warmup. Healthy idle workers and loaded models are reused across channel changes while translation remains enabled; old channel captions and language detection are reset. Settings changes, disabling both modes and canceled in-flight requests rebuild or release the worker. Recognition skips already confirmed old audio while retaining three seconds of acoustic context and all unconfirmed speech. Stable clause punctuation can release a confirmed phrase before the length limit. Caption delay includes collecting audio, word confirmation, model processing, any cloud request and UI scheduling. Simultaneous speakers, accents, music and quiet speech remain difficult.
 
 Process loopback captures rendered audio, so mute/zero volume may produce silence depending on Windows audio behavior.
 

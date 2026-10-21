@@ -1,3 +1,12 @@
+# 0.12.3 Feature Rich preview
+
+- Buffer app audio while recognition warms up, prepare speech before screen OCR, and begin speech processing as soon as its model is ready.
+- Reduce continuous capture intervals from 2.5 to 1.5 seconds and allow confirmed clause boundaries to dispatch earlier while retaining two-pass word confirmation.
+- Reuse healthy idle workers and loaded models across active-session channel changes. Reset old captions and language detection; rebuild workers after canceled in-flight requests or settings changes.
+- Avoid importing PyTorch solely to detect speech CUDA support. Local RTX 4050/medium startup probes improved from a 4.92-second median to 3.25 seconds (three runs each); this is a workstation measurement, not an end-to-end cloud latency claim.
+- Trim already confirmed old audio before recognition while keeping three seconds of acoustic context and all unconfirmed speech.
+- Preserve existing models, CUDA libraries, Azure settings and installer upgrade identity.
+
 # 0.12.2 Feature Rich preview
 
 - Add an Azure settings tab with a masked auth-key field, Global/regional resource support, connection test and explicit Local/Azure provider selection.

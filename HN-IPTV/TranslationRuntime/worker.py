@@ -193,25 +193,29 @@ def install_opus(root):
         if staging.exists(): shutil.rmtree(staging)
 
 _DLL_HANDLES = []
+def cuda_libraries_ready():
+    # Resolve the private CUDA libraries without importing all of PyTorch for speech.
+    if os.name != "nt":
+        return True
+    library = Path(sys.executable).parent / "Lib/site-packages/torch/lib"
+    if not all((library / name).is_file() for name in ("cublas64_12.dll", "cudnn64_9.dll")):
+        return False
+    _DLL_HANDLES.append(os.add_dll_directory(str(library)))
+    os.environ["PATH"] = str(library) + os.pathsep + os.environ.get("PATH", "")
+    return True
+
 def select_device(requested):
     if requested == "cpu":
         return "cpu", None
     try:
-        # The official Windows CUDA torch wheel includes cuBLAS/cuDNN in torch/lib.
-        # Keep DLL directory handles alive; PATH changes apply only to this worker.
-        if os.name == "nt":
-            library = Path(sys.executable).parent / "Lib/site-packages/torch/lib"
-            if library.is_dir():
-                _DLL_HANDLES.append(os.add_dll_directory(str(library)))
-                os.environ["PATH"] = str(library) + os.pathsep + os.environ.get("PATH", "")
-        import torch
         import ctranslate2
-        if torch.cuda.is_available() and ctranslate2.get_cuda_device_count() > 0:
+        if cuda_libraries_ready() and ctranslate2.get_cuda_device_count() > 0:
             return "cuda", None
         return "cpu", ("NVIDIA CUDA is unavailable; using CPU. Prepare CUDA in Translation settings."
                        if requested == "cuda" else None)
     except (ImportError, RuntimeError, OSError):
         return "cpu", "CUDA could not load; using CPU. Prepare CUDA in Translation settings."
+
 
 def setup(root, source_codes, target, size, speech_only=False, device="cpu", text_model="auto"):
     from faster_whisper import WhisperModel
@@ -375,6 +379,7 @@ class Engine:
         self.external_translate = None
         self.last_speech = ""
         self.cue_committer = SpeechCueCommitter()
+        self.prepared = set()
         self.screen_snapshot = None
         self.ready = json.loads((self.root / "ready.json").read_text("utf-8"))
 
@@ -387,6 +392,7 @@ class Engine:
             self.device = "cpu"
             self.notice = "CUDA failed or ran out of memory; translation continued on CPU."
             self.speech = None
+            self.prepared.clear()
             self.size = self.requested_size
             self.readers.clear()
             self.translators.clear()
@@ -502,8 +508,20 @@ class Engine:
         return (self.text_model == "azure" or self.size == "turbo" or self.pipeline == "staged" or target != "en"
             or (self.pipeline == "auto" and (source == "ar" or "ar" in self.ready.get("inputs", []))))
 
+    def reset(self):
+        self.cue_committer = SpeechCueCommitter()
+        self.last_language = None
+        self.last_speech = ""
+        self.language_until = 0
+        self.screen_snapshot = None
+        return self.execute(lambda: {"text":"", "source":"", "target":""})
+
     def prepare(self, kind, source, target):
         def load():
+            key = (kind,source,target,self.device)
+            if key in self.prepared:
+                return {"text":"", "source":source, "target":target}
+
             if kind == "audio":
                 import numpy as np
                 self.ensure_speech()
@@ -531,6 +549,7 @@ class Engine:
                         raise ValueError("Install the " + group + " screen-text model in Translation settings.")
                     self.reader(group).readtext(np.zeros((64, 256, 3), dtype=np.uint8),
                         canvas_size=256, workers=0)
+            self.prepared.add(key)
             return {"text": "", "source": source, "target": target}
         return self.execute(load)
 
@@ -556,6 +575,14 @@ class Engine:
         final = False
         window_duration = len(signal) / 16000
         window_start = float(audio_end_seconds or 0) - window_duration
+        if timed and self.cue_committer.committed_until > window_start + 3:
+            # Keep three seconds of acoustic context before already confirmed speech;
+            # never discard the unconfirmed sentence that is still being recognized.
+            cut = int((self.cue_committer.committed_until-window_start-3)*16000)
+            signal = signal[cut:]
+            window_start += cut/16000
+            context_seconds = max(0,context_seconds-cut/16000)
+            window_duration = len(signal)/16000
         if context_seconds > 0:
             fresh = signal[min(len(signal), int(context_seconds * 16000)):]
             if len(fresh) < 512 or not get_speech_timestamps(fresh, VadOptions(**VAD_PARAMETERS)):
@@ -720,7 +747,9 @@ def run(root, size, device="auto", text_model="auto", pipeline="auto", noise=Fal
             payload = base64.b64decode(request["data"], validate=True)
             with contextlib.redirect_stdout(sys.stderr):
                 kind = request["kind"]
-                if kind.startswith("prepare_"):
+                if kind == "reset":
+                    result = engine.reset()
+                elif kind.startswith("prepare_"):
                     result = engine.prepare(kind.removeprefix("prepare_"), source, target)
                 elif kind == "audio":
                     result = engine.audio(payload, source, target, min(20, max(0, float(request.get("context_seconds", 0)))), request.get("audio_end_seconds"))

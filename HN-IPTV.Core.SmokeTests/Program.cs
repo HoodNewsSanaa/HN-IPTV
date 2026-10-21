@@ -358,21 +358,21 @@ var segmenter = new HnIptv.Translation.SpeechAudioBuffer();
 byte[] voicedPacket = new byte[HnIptv.Translation.SpeechAudioBuffer.BytesPerSecond / 10];
 for (int i = 0; i < voicedPacket.Length; i += 2) { voicedPacket[i] = 0; voicedPacket[i + 1] = 10; }
 byte[]? speechSegment = null;
-for (int i = 0; i < 25; i++) speechSegment = segmenter.Append(voicedPacket);
-Check(speechSegment?.Length == HnIptv.Translation.SpeechAudioBuffer.BytesPerSecond * 5 / 2, "continuous speech is emitted within 2.5 seconds");
-for (int i = 0; i < 15; i++) segmenter.Append(voicedPacket);
+for (int i = 0; i < 15; i++) speechSegment = segmenter.Append(voicedPacket);
+Check(speechSegment?.Length == HnIptv.Translation.SpeechAudioBuffer.BytesPerSecond * 3 / 2, "continuous speech is emitted within 1.5 seconds");
+for (int i = 0; i < 8; i++) segmenter.Append(voicedPacket);
 byte[] silence = new byte[voicedPacket.Length];
-for (int i = 0; i < 3; i++) speechSegment = segmenter.Append(silence);
+for (int i = 0; i < 2; i++) speechSegment = segmenter.Append(silence);
 Check(speechSegment != null && speechSegment.Length >= HnIptv.Translation.SpeechAudioBuffer.BytesPerSecond * 2, "phrase segmentation carries overlap across a pause");
 var rollingAudio = new HnIptv.Translation.SpeechAudioBuffer();
 int rollingEmissions = 0;
-for (int packet = 0; packet < 250; packet++)
+for (int packet = 0; packet < 240; packet++)
     if (rollingAudio.Append(voicedPacket) is { } rollingSegment) {
         rollingEmissions++;
         Check(rollingSegment.Length <= HnIptv.Translation.SpeechAudioBuffer.BytesPerSecond * 15, "rolling audio memory stays bounded");
-        if (rollingEmissions > 1) Check(rollingAudio.LastContextSeconds >= 2.5, "recognition retains sentence context");
+        if (rollingEmissions > 1) Check(rollingAudio.LastContextSeconds >= 1.5, "recognition retains sentence context");
     }
-Check(rollingEmissions == 10, "continuous rolling captions refresh every 2.5 seconds");
+Check(rollingEmissions == 16, "continuous rolling captions refresh every 1.5 seconds");
 var screenViewport = HnIptv.Translation.ScreenOverlayLayout.Viewport(1280, 960, 16d / 9);
 Check(Math.Abs(screenViewport.Y - 120) < 0.001 && Math.Abs(screenViewport.Height - 720) < 0.001, "overlay respects letterboxing");
 var translatedRegion = new HnIptv.Translation.ScreenTranslationRegion(0.1, 0.8, 0.4, 0.1, "Translated headline");
