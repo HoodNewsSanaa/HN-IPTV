@@ -4,7 +4,7 @@ on:
     inputs:
       version:
         description: Version to build
-        default: '0.12.1'
+        default: '0.12.2'
         required: true
       publish_release:
         description: Publish the tested packages as a GitHub Release

@@ -262,10 +262,12 @@ def setup(root, source_codes, target, size, speech_only=False, device="cpu", tex
                            user_network_directory=str(root / "ocr-user"),
                            download_enabled=True, verbose=False)
         from urllib.request import urlopen
-        with urlopen("https://raw.githubusercontent.com/argosopentech/argospm-index/main/index.json", timeout=30) as response:
-            index = json.load(response)
+        index = []
+        if text_model != "azure":
+            with urlopen("https://raw.githubusercontent.com/argosopentech/argospm-index/main/index.json", timeout=30) as response:
+                index = json.load(response)
         pairs = set()
-        for code in sources:
+        for code in ([] if text_model == "azure" else sources):
             if code == target:
                 continue
             direct = next((p for p in index if p.get("from_code") == code and p.get("to_code") == target), None)
@@ -370,6 +372,7 @@ class Engine:
         self.translators = OrderedDict()
         self.cache = OrderedDict()
         self.last_language = None
+        self.external_translate = None
         self.last_speech = ""
         self.cue_committer = SpeechCueCommitter()
         self.screen_snapshot = None
@@ -443,6 +446,13 @@ class Engine:
         if key in self.cache:
             self.cache.move_to_end(key)
             return self.cache[key]
+        if self.text_model == "azure":
+            if self.external_translate is None:
+                raise ValueError("Azure translation requires the application text bridge.")
+            result = self.external_translate(text, source, target)
+            self.cache[key] = result
+            while len(self.cache) > 256: self.cache.popitem(last=False)
+            return result
         try:
             tokenizer, model, prefix = self.pair(source, target)
         except ValueError:
@@ -489,7 +499,7 @@ class Engine:
         return self.readers[group]
 
     def uses_staged(self, source, target):
-        return (self.size == "turbo" or self.pipeline == "staged" or target != "en"
+        return (self.text_model == "azure" or self.size == "turbo" or self.pipeline == "staged" or target != "en"
             or (self.pipeline == "auto" and (source == "ar" or "ar" in self.ready.get("inputs", []))))
 
     def prepare(self, kind, source, target):
@@ -502,7 +512,7 @@ class Engine:
                 list(segments)  # Initialize feature extraction and CUDA before capturing live audio.
                 from faster_whisper.vad import get_speech_timestamps, VadOptions
                 get_speech_timestamps(np.zeros(16000, dtype=np.float32), VadOptions(**VAD_PARAMETERS))
-                if self.uses_staged(source, target):
+                if self.uses_staged(source, target) and self.text_model != "azure":
                     inputs = [source] if source != "auto" else self.ready.get("inputs", [])
                     for code in inputs:
                         if code == target: continue
@@ -687,6 +697,17 @@ def run(root, size, device="auto", text_model="auto", pipeline="auto", noise=Fal
     # Stdout is only the protocol. Third-party diagnostic output goes to stderr.
     protocol = sys.stdout
     sys.stdout = sys.stderr
+    def external_translate(text, source, target):
+        protocol.write(json.dumps({"id":request["id"], "translation_request":{
+            "text":text, "source":source, "target":target}},ensure_ascii=True)+"\n")
+        protocol.flush()
+        line = sys.stdin.readline(128*1024)
+        reply = json.loads(line)
+        if reply.get("error"): raise ValueError(str(reply["error"])[:300])
+        value = reply.get("translation_response")
+        if not isinstance(value,str) or not value.strip(): raise ValueError("Empty Azure translation response.")
+        return value
+    if text_model == "azure": engine.external_translate = external_translate
     for line in sys.stdin:
         if len(line) > 16 * 1024 * 1024:
             break
@@ -719,7 +740,7 @@ if __name__ == "__main__":
     parser.add_argument("--models", required=True)
     parser.add_argument("--size", choices=["auto", "tiny", "base", "small", "medium", "turbo"], default="auto")
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
-    parser.add_argument("--text-model", choices=["auto", "argos"], default="auto")
+    parser.add_argument("--text-model", choices=["auto", "argos", "azure"], default="auto")
     parser.add_argument("--pipeline", choices=["auto", "direct", "staged"], default="auto")
     parser.add_argument("--noise", action="store_true")
     parser.add_argument("--setup", action="store_true")

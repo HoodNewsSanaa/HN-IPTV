@@ -391,6 +391,8 @@ regionTracker.Clear();
 Check(HnIptv.Translation.TranslationSettings.Load(translationFile+"-missing-overlay-test").ScreenOverlay == "positioned", "new screen overlay default");
 Console.WriteLine("Translation settings, caption continuity, phrase segmentation, positioned overlays and stale-result cancellation checks passed.");
 
+await AzureTranslationChecks.RunAsync();
+
 static void Check(bool condition, string name)
 {
     if (!condition) throw new Exception(name + " check failed");

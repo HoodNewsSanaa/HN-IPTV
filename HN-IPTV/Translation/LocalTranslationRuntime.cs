@@ -62,7 +62,7 @@ internal static class LocalTranslationRuntime
         }
         progress("Downloading requested language models. Existing models stay cached...");
         await RunAsync([Worker, "--setup", "--models", Models, "--size", settings.SpeechModel,
-            "--inputs", string.Join(",", settings.InstalledInputs), "--target", settings.Target, "--device", settings.Acceleration, "--text-model", settings.TextModel], progress, ct);
+            "--inputs", string.Join(",", settings.InstalledInputs), "--target", settings.Target, "--device", settings.Acceleration, "--text-model", settings.Provider == "azure" ? "azure" : settings.TextModel], progress, ct);
     }
     private static async Task<bool> HasNvidiaGpuAsync(CancellationToken ct)
     {
@@ -138,10 +138,13 @@ internal sealed class LocalTranslationWorker : IAsyncDisposable
     private long _sequence;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Task _errors;
-    internal LocalTranslationWorker(TranslationSettings settings)
+    private readonly AzureTranslatorClient? _azure;
+    internal LocalTranslationWorker(TranslationSettings settings, AzureTranslatorClient? azure = null)
     {
+        if (settings.Provider == "azure")
+            _azure = azure ?? new AzureTranslatorClient(AzureTranslationCredentials.Load(),settings.AzureRegion);
         var arguments = new List<string> { LocalTranslationRuntime.Worker, "--models", LocalTranslationRuntime.Models,
-            "--size", settings.SpeechModel, "--device", settings.Acceleration, "--text-model", settings.TextModel,
+            "--size", settings.SpeechModel, "--device", settings.Acceleration, "--text-model", settings.Provider == "azure" ? "azure" : settings.TextModel,
             "--pipeline", settings.SpeechPipeline };
         if (settings.NoiseSuppression) arguments.Add("--noise");
         var info = LocalTranslationRuntime.StartInfo(arguments);
@@ -162,8 +165,28 @@ internal sealed class LocalTranslationWorker : IAsyncDisposable
                 source = settings.InputLanguage, target = settings.Target, context_seconds = contextSeconds, audio_end_seconds = audioEndSeconds });
             await _process.StandardInput.WriteLineAsync(line.AsMemory(), ct);
             await _process.StandardInput.FlushAsync(ct);
-            var response = await _process.StandardOutput.ReadLineAsync(ct).AsTask().WaitAsync(TimeSpan.FromMinutes(2), ct)
-                ?? throw new IOException("The local translation worker stopped.");
+            string response;
+            while (true) {
+                response = await _process.StandardOutput.ReadLineAsync(ct).AsTask().WaitAsync(TimeSpan.FromMinutes(2), ct)
+                    ?? throw new IOException("The local translation worker stopped.");
+                using var message = JsonDocument.Parse(response);
+                if (!message.RootElement.TryGetProperty("translation_request",out var translation)) break;
+                if (_azure == null || message.RootElement.GetProperty("id").GetInt64() != id)
+                    throw new IOException("Unexpected external translation request.");
+                string translated = "", failure = "";
+                try {
+                    translated = await _azure.TranslateAsync(translation.GetProperty("text").GetString() ?? "",
+                        translation.GetProperty("source").GetString() ?? "auto",
+                        translation.GetProperty("target").GetString() ?? settings.Target,ct);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                catch (InvalidOperationException ex) { failure = ex.Message; }
+                catch { failure = "Azure translation could not complete. Check the key, region, connection and quota in Azure settings."; }
+                // Only sanitized service errors and translated text return to the offline worker.
+                var reply = JsonSerializer.Serialize(new { translation_response = translated, error = failure });
+                await _process.StandardInput.WriteLineAsync(reply.AsMemory(),ct);
+                await _process.StandardInput.FlushAsync(ct);
+            }
             using var result = JsonDocument.Parse(response);
             var root = result.RootElement;
             if (root.GetProperty("id").GetInt64() != id) throw new IOException("Translation response was out of sequence.");
@@ -190,7 +213,7 @@ internal sealed class LocalTranslationWorker : IAsyncDisposable
             }
             return new TranslationResult(root.GetProperty("text").GetString() ?? "", root.GetProperty("source").GetString() ?? "",
                 root.GetProperty("target").GetString() ?? "", error,
-                root.TryGetProperty("backend", out var backend) ? backend.GetString() ?? "" : "",
+                (root.TryGetProperty("backend", out var backend) ? backend.GetString() ?? "" : "") + (_azure == null ? "" : " + Azure Translator"),
                 root.TryGetProperty("notice", out var notice) ? notice.GetString() : null,
                 root.TryGetProperty("regions", out _) ? regions : null,
                 root.TryGetProperty("frame_width", out var fw) ? fw.GetInt32() : 0,

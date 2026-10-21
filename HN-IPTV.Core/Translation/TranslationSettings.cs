@@ -9,6 +9,8 @@ public sealed record TranslationSettings
     public string OutputLanguage { get; init; } = "auto";
     public string SpeechModel { get; init; } = "auto";
     public string Acceleration { get; init; } = "auto";
+    public string Provider { get; init; } = "local";
+    public string AzureRegion { get; init; } = "global";
     public string TextModel { get; init; } = "auto";
     public string SpeechPipeline { get; init; } = "auto";
     public bool NoiseSuppression { get; init; }
@@ -23,6 +25,8 @@ public sealed record TranslationSettings
     public TranslationSettings Normalize() => this with {
         InputLanguage = NormalizeLanguage(InputLanguage), OutputLanguage = NormalizeLanguage(OutputLanguage),
         SpeechModel = SpeechModel is "auto" or "tiny" or "base" or "small" or "medium" or "turbo" ? SpeechModel : "auto",
+        Provider = Provider is "local" or "azure" ? Provider : "local",
+        AzureRegion = string.IsNullOrWhiteSpace(AzureRegion) ? "global" : AzureRegion.Trim().ToLowerInvariant(),
         TextModel = TextModel is "auto" or "argos" ? TextModel : "auto",
         SpeechPipeline = SpeechPipeline is "auto" or "direct" or "staged" ? SpeechPipeline : "auto",
         Acceleration = Acceleration is "auto" or "cpu" or "cuda" ? Acceleration : "auto",

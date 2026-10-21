@@ -75,14 +75,14 @@ public partial class MainWindow
         if (!_translateSpeech && !TranslationReady()) return;
         _translateSpeech = !_translateSpeech; RenderTranslationButtons();
         await RestartTranslationAsync();
-        SetStatus(_translateSpeech ? "Local speech translation on. Captions follow speech with a processing delay." : "Speech translation off.");
+        SetStatus(_translateSpeech ? (_translationSettings.Provider == "azure" ? "Azure speech translation on. Only recognized text is sent online." : "Local speech translation on. Captions follow speech with a processing delay.") : "Speech translation off.");
     }
     private async void TranslateScreen_Click(object sender, RoutedEventArgs e)
     {
         if (!_translateScreen && !TranslationReady()) return;
         _translateScreen = !_translateScreen; RenderTranslationButtons();
         await RestartTranslationAsync();
-        SetStatus(_translateScreen ? "Local screen-text translation on. Auto uses installed language models." : "Screen-text translation off.");
+        SetStatus(_translateScreen ? (_translationSettings.Provider == "azure" ? "Azure screen-text translation on. Only recognized text is sent online." : "Local screen-text translation on. Auto uses installed language models.") : "Screen-text translation off.");
     }
     private async Task RestartTranslationAsync()
     {
@@ -116,7 +116,7 @@ public partial class MainWindow
                 }
             }
             if (!_translateSpeech && !_translateScreen) { await StopTranslationResourcesAsync(); return; }
-            _translationOverlay.SetMessage("Local translation ready.", 3);
+            _translationOverlay.SetMessage(settings.Provider == "azure" ? "Azure text translation ready." : "Local translation ready.", 3);
             if (_translateSpeech)
             {
                 var capture = new ProcessAudioCapture();
@@ -141,8 +141,8 @@ public partial class MainWindow
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) {
-            App.LogException("translation.start", ex); SetStatus("Local translation could not start. Check Translation settings.");
-            _translationOverlay?.SetMessage("Local translation could not start. Check Translation settings.", 10);
+            App.LogException("translation.start", ex); SetStatus(_translationSettings.Provider == "azure" ? "Azure translation could not start. Check the key and region in the Azure settings tab." : "Local translation could not start. Check Translation settings.");
+            _translationOverlay?.SetMessage(_translationSettings.Provider == "azure" ? "Check the key and region in Azure settings." : "Local translation could not start. Check Translation settings.", 10);
             _translateSpeech = _translateScreen = false; RenderTranslationButtons();
             await StopTranslationResourcesAsync();
         }

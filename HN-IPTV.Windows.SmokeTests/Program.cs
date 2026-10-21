@@ -40,6 +40,19 @@ internal static class Program
                 results["window_ready_ms"] = clock.Elapsed.TotalMilliseconds;
                 results["engine"] = BuildInfo.Engine;
                 results["app_sha256"] = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(typeof(MainWindow).Assembly.Location))).ToLowerInvariant();
+                AzureTranslationCredentials.Save("synthetic-azure-key-for-regression");
+                if (AzureTranslationCredentials.Load() != "synthetic-azure-key-for-regression" ||
+                    Encoding.UTF8.GetString(File.ReadAllBytes(AzureTranslationCredentials.PathForKey)).Contains("synthetic-azure-key"))
+                    throw new InvalidOperationException("Azure key was not encrypted for this Windows account.");
+                var azureDialog = new TranslationSettingsDialog(new HnIptv.Translation.TranslationSettings { Provider = "azure" });
+                var password = (PasswordBox)typeof(TranslationSettingsDialog).GetField("_azureKey",Private)!.GetValue(azureDialog)!;
+                if (password.Password != "synthetic-azure-key-for-regression")
+                    throw new InvalidOperationException("Azure settings did not load the saved masked key.");
+                azureDialog.Close();
+                AzureTranslationCredentials.Save("");
+                if (File.Exists(AzureTranslationCredentials.PathForKey) || File.Exists(AzureTranslationCredentials.PathForKey+".bak"))
+                    throw new InvalidOperationException("Clearing the Azure key retained an old credential.");
+                results["azure_key_encryption_and_settings"] = true;
                 var channelList = (ListBox)typeof(MainWindow).GetField("ChannelsList", Private | BindingFlags.Public)!.GetValue(window)!;
                 var controller = (PlaybackController)typeof(MainWindow).GetField("_playback", Private)!.GetValue(window)!;
                 var kind = Enum.Parse(typeof(MainWindow).GetNestedType("SourceKind", BindingFlags.NonPublic)!, "M3u");

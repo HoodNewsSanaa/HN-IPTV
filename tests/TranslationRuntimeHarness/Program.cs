@@ -28,5 +28,6 @@ await (Task)runtime.GetMethod("InstallAsync", BindingFlags.Static | BindingFlags
     .Invoke(null, [settings with { InstalledInputs = ["ar"], OutputLanguage = "en" }, (Action<string>)Console.WriteLine, CancellationToken.None])!;
 string python = (string)runtime.GetProperty("Python", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
 string models = (string)runtime.GetProperty("Models", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
-File.WriteAllText(args[2], JsonSerializer.Serialize(new { python, models, passed = true }));
+await AzureBridgeChecks.RunAsync(assembly,python,settings);
+File.WriteAllText(args[2], JsonSerializer.Serialize(new { python, models, azure_bridge = true, passed = true }));
 Console.WriteLine("The same private-runtime setup used by the app completed.");

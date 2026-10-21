@@ -1,3 +1,12 @@
+# 0.12.2 Feature Rich preview
+
+- Add an Azure settings tab with a masked auth-key field, Global/regional resource support, connection test and explicit Local/Azure provider selection.
+- Encrypt saved Azure keys for the current Windows account; exclude keys from normal settings, worker arguments and diagnostics.
+- Keep speech recognition and OCR local with worker network access blocked. Only confirmed speech text and recognized screen text pass through the app to Azure Translator.
+- Cache translated text and report sanitized authentication, quota, rate-limit and connection errors. Local translation remains selectable; existing users stay Local until selecting Azure.
+- Reuse existing runtime, models and CUDA libraries. Azure model setup skips unnecessary local translation-pack downloads.
+- Validate HTTP routing/errors/cache with simulated responses, actual offline OCR through the C# cloud bridge, and Windows key-storage/settings regressions.
+
 # 0.12.1 Feature Rich preview
 
 - Move translated speech captions and the separate text-caption bar above the visible fullscreen toolbar, using its measured bounds with DPI-aware coordinate conversion; restore the normal position when controls hide.

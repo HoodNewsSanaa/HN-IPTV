@@ -158,6 +158,30 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(worker.MarianTokenizer.translation_options["beam_size"], 3)
         self.assertEqual(worker.MarianTokenizer.translation_options["length_penalty"], 1)
 
+
+    def test_azure_routes_only_text_through_the_app_and_reuses_cache(self):
+        with tempfile.TemporaryDirectory() as temp:
+            Path(temp, "ready.json").write_text("{}")
+            engine = worker.Engine(temp, "tiny", text_model="azure", pipeline="direct")
+            calls = []
+            engine.external_translate = lambda text,source,target: (calls.append((text,source,target)) or "translated")
+            self.assertTrue(engine.uses_staged("ar","en"))
+            self.assertEqual(engine.translate("source text","ar","en"),"translated")
+            self.assertEqual(engine.translate("source text","ar","en"),"translated")
+            self.assertEqual(calls,[("source text","ar","en")])
+            self.assertEqual(engine.translate("same","en","en"),"same")
+            self.assertFalse(engine.translators)
+
+    def test_azure_failures_do_not_cache_error_text(self):
+        with tempfile.TemporaryDirectory() as temp:
+            Path(temp, "ready.json").write_text("{}")
+            engine = worker.Engine(temp, "tiny", text_model="azure")
+            def fail(*args): raise ValueError("Azure rejected the key")
+            engine.external_translate = fail
+            with self.assertRaisesRegex(ValueError,"rejected"):
+                engine.translate("source","ar","en")
+            self.assertFalse(engine.cache)
+
     def test_missing_pack_is_reported_instead_of_using_a_cloud_service(self):
         with tempfile.TemporaryDirectory() as temp:
             Path(temp, "ready.json").write_text("{}")

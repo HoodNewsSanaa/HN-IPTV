@@ -1,4 +1,4 @@
-# HN-IPTV Feature Rich preview — 0.12.1
+# HN-IPTV Feature Rich preview — 0.12.2
 
 Branch: `HN-IPTV-Feature-Rich`. Stable main remains separate.
 
@@ -57,3 +57,19 @@ Returning from Alt-Tab reveals fullscreen controls and restores keyboard focus. 
 The release gates include core/worker regressions, real private-runtime setup, English speech and screen translation into Spanish, the Spanish BPE pack, the new standalone Arabic OPUS pack, staged speech translation, frame geometry and caching, fullscreen/PiP lifecycle, native frame capture and app loopback, portable rollback, and base-to-feature installation/data preservation.
 
 Local RTX 4050 checks cover actual Arabic OCR, shared medium CUDA inference, rolling speech behavior, silence gating, and a rendered positioned-overlay preview. CPU model profiles and pack validation are reproducible from the linked report. Hosted CI has no NVIDIA GPU; turbo and the new OPUS pack's CUDA timing remain unmeasured.
+
+## Optional Azure Translator
+
+Open **Translation settings → Azure**. Choose provider **azure**, paste **Key 1 or Key 2**, and enter **global** for a standalone Global Translator resource or its exact region code (for example `eastus`). Use **Test Azure connection**, then **Save**. The test translates only the five-character word Hello into Spanish. The app uses the public HTTPS Translator endpoint; private/VNET endpoints are not supported.
+
+The key is masked and saved separately with Windows DPAPI encryption for the current Windows account. It is not written to translation-settings.json, Python arguments, the worker protocol or diagnostic logs. **Clear key field (applied on Save)** switches back to Local and removes the saved encrypted key and its backup when saved. Portable keys remain tied to the Windows account/machine that saved them; paste the key again after moving to a different account or PC.
+
+Azure replaces the text translator for both confirmed speech phrases and screen OCR. Speech models and OCR still run locally. The worker has network access blocked and sends text-only requests to the Windows app; only the app authenticates to Azure. It does not upload audio, images or video. Azure speech always uses recognition followed by text translation, even if Direct English was selected for the Local provider.
+
+Existing prepared recognition/OCR models and CUDA libraries are reused; no new model downloads are needed for an already prepared installation. For fresh Azure setup, prepare the speech and script models as before; local translation packs are skipped. Azure cannot fix a badly recognized transcript.
+
+Repeated text is cached within the active session. Authentication/quota errors stop repeated HTTP attempts until restarting the session or updating settings; rate limits impose a cooldown. Errors do not expose provider response bodies or the key. No silent switch to a different cloud provider occurs. Select **local** to return to offline translation.
+
+The F0 allowance, subscription and billing are managed in Azure; the app does not create a resource or change its pricing tier. See [Azure authentication](https://learn.microsoft.com/en-us/azure/ai-services/translator/text-translation/reference/authentication) and [Translator pricing](https://azure.microsoft.com/en-us/pricing/details/translator/).
+
+Azure HTTP/header/region/cache/error/cancellation behavior is tested with synthetic keys and simulated responses. The private-runtime suite exercises real OCR through the app's C# text bridge, including geometry, cache reuse and sanitized failure propagation. Live Azure service/key validation requires the in-app connection test with your own key.
