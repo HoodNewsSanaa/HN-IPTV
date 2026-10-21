@@ -34,8 +34,10 @@ public sealed record TranslationSettings
     public void Save(string path) => AtomicFile.Write(path, stream => JsonSerializer.Serialize(stream, Normalize()));
 }
 
+public sealed record SpeechCaptionCue(string Text, double DurationSeconds);
+
 public sealed record TranslationResult(string Text, string Source, string Target, string? Error = null, string Backend = "", string? Notice = null,
-    IReadOnlyList<ScreenTranslationRegion>? Regions = null, int FrameWidth = 0, int FrameHeight = 0, bool ReplaceSpeech = false);
+    IReadOnlyList<ScreenTranslationRegion>? Regions = null, int FrameWidth = 0, int FrameHeight = 0, bool ReplaceSpeech = false, IReadOnlyList<SpeechCaptionCue>? SpeechCues = null);
 
 // Clear all old results at each tune, Stop, settings change, or toggle.
 public sealed class TranslationGeneration

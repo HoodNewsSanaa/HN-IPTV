@@ -6,6 +6,7 @@ on:
     paths:
       - 'HN-IPTV/TranslationRuntime/**'
       - 'tests/*translation*'
+      - 'tests/test_speech_cues.py'
       - '.github/workflows/feature-translation.yml'
   workflow_dispatch:
 permissions:
@@ -27,6 +28,8 @@ jobs:
           python-version: '3.12'
       - name: Worker unit regressions
         run: python -m unittest discover -s tests -p test_translation_worker.py -v
+      - name: Timed caption stability regressions
+        run: python -m unittest discover -s tests -p test_speech_cues.py -v
       - name: Publish feature application for setup validation
         shell: pwsh
         run: ./build-windows.ps1

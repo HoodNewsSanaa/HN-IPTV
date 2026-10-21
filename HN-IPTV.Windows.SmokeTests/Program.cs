@@ -361,7 +361,9 @@ internal static class Program
                 results["fullscreen_reactivation_and_escape"] = true;
                 for (int pass = 0; pass < 3; pass++) {
                     Invoke(window, "ToggleFullscreen");
-                    var overlay = new TranslationOverlay(() => (window, host));
+                    var overlay = new TranslationOverlay(() => (window, host)) {
+                        ControlsWindow = () => (FullscreenControls?)typeof(MainWindow).GetField("_fullscreenControls", Private)!.GetValue(window)
+                    };
                     overlay.SetScreenRegions(new[] { new HnIptv.Translation.ScreenTranslationRegion(
                         0.15, 0.7, 0.5, 0.1, "Translated headline at its original position", "#203040", "#FFFFFF") }, 1920, 1080, "en");
                     if (overlay.PositionedRegionCount != 1) throw new InvalidOperationException("Positioned translation was not drawn.");
@@ -369,6 +371,18 @@ internal static class Program
                     // Require the overlay to converge to the actual native-video host size.
                     await UntilAsync(() => Task.FromResult(overlay.PositionedRegionCount == 1 &&
                         Math.Abs(overlay.Width-host.ActualWidth)<=2 && Math.Abs(overlay.Height-host.ActualHeight)<=2));
+                    var activeControls = (FullscreenControls)typeof(MainWindow).GetField("_fullscreenControls", Private)!.GetValue(window)!;
+                    window.Activate(); activeControls.Reveal();
+                    overlay.QueueSpeech(new[] { new HnIptv.Translation.SpeechCaptionCue("A compact timed caption",1.5) });
+                    await UntilAsync(() => Task.FromResult(activeControls.IsVisible &&
+                        overlay.CaptionBottomInset >= host.ActualHeight-host.PointFromScreen(activeControls.PointToScreen(new Point(0,0))).Y+10));
+                    double raisedInset = overlay.CaptionBottomInset;
+                    activeControls.Hide();
+                    ((DispatcherTimer)typeof(FullscreenControls).GetField("_timer", Private)!.GetValue(activeControls)!).Stop();
+                    await UntilAsync(() => Task.FromResult(overlay.CaptionBottomInset < raisedInset-5));
+                    await UntilAsync(() => Task.FromResult(!overlay.SpeechCaptionVisible));
+                    results["captions_avoid_fullscreen_controls"] = true;
+                    results["timed_speech_captions_expire"] = true;
                     overlay.SetSpeech("Continuous speech caption");
                     overlay.SetSpeech(""); // A silent chunk must preserve the previous caption.
                     await UntilAsync(() => Task.FromResult(overlay.IsVisible));

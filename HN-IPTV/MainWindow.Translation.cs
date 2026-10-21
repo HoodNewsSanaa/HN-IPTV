@@ -37,7 +37,9 @@ public partial class MainWindow
         };
     }
     private TranslationOverlay CreateTranslationOverlay() => new(() =>
-        _pip == null ? (this, VideoView) : (_pip, _pip.VideoHost), () => _streamInfo.AspectRatio);
+        _pip == null ? (this, VideoView) : (_pip, _pip.VideoHost), () => _streamInfo.AspectRatio) {
+            ControlsWindow = () => _pip == null && _isFullScreen ? _fullscreenControls : null
+        };
     private void ResetTranslationOverlay()
     {
         var previous = _translationOverlay; _translationOverlay = null;
@@ -155,7 +157,7 @@ public partial class MainWindow
                 if (_userPaused || System.Diagnostics.Stopwatch.GetElapsedTime(chunk.CapturedAt).TotalSeconds > 4) continue;
                 _audioInference = true;
                 TranslationResult result;
-                try { result = await worker.TranslateAsync("audio", chunk.Wave, settings, ct, chunk.ContextSeconds); }
+                try { result = await worker.TranslateAsync("audio", chunk.Wave, settings, ct, chunk.ContextSeconds, chunk.AudioEndSeconds); }
                 finally { _audioInference = false; }
                 if (ct.IsCancellationRequested || !_translationGeneration.IsCurrent(generation)) return;
                 ApplyTranslation(result, true);
@@ -212,7 +214,10 @@ public partial class MainWindow
             _translationBackend = backend;
             SetStatus("Local translation: " + result.Backend + (result.Notice == null ? "." : ". " + result.Notice));
         }
-        if (speech) _translationOverlay?.SetSpeech(result.Text, result.ReplaceSpeech);
+        if (speech) {
+            if (result.SpeechCues != null) _translationOverlay?.QueueSpeech(result.SpeechCues);
+            else _translationOverlay?.SetSpeech(result.Text, result.ReplaceSpeech);
+        }
         else {
             if (_translationSettings.ScreenOverlay == "positioned" && result.Regions != null)
                 _translationOverlay?.SetScreenRegions(result.Regions, result.FrameWidth, result.FrameHeight, result.Target);

@@ -9,6 +9,7 @@ from unittest.mock import patch
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "HN-IPTV/TranslationRuntime"))
 spec = importlib.util.spec_from_file_location("hn_worker", ROOT / "HN-IPTV/TranslationRuntime/worker.py")
 worker = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(worker)

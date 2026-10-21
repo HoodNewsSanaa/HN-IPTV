@@ -12,6 +12,8 @@ internal sealed class TranslationOverlay : Window
 {
     private readonly TextBlock _speech = Line(), _screen = Line(), _message = Line();
     private readonly CaptionHistory _history = new();
+    private readonly Queue<(SpeechCaptionCue Cue, long At)> _speechQueue = new();
+    private long _cueUntil;
     private readonly Canvas _regions = new() { IsHitTestVisible = false };
     private readonly StackPanel _captions = new();
     private readonly ScreenRegionTracker _tracker = new();
@@ -26,10 +28,14 @@ internal sealed class TranslationOverlay : Window
     private long _messageUntil, _speechAt, _screenAt;
     internal bool IsClosed => _closed;
     internal int PositionedRegionCount => _labels.Count;
+    internal Func<Window?>? ControlsWindow { get; init; }
+    internal double CaptionBottomInset => _captions.Margin.Bottom;
+    internal bool SpeechCaptionVisible => _speech.Visibility == Visibility.Visible;
 
     internal TranslationOverlay(Func<(Window, FrameworkElement)> target, Func<double>? aspect = null)
     {
         _target = target; _aspect = aspect;
+        _speech.HorizontalAlignment = HorizontalAlignment.Center;
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; AllowsTransparency = true;
         Background = Brushes.Transparent; ShowActivated = false; ShowInTaskbar = false; Focusable = false;
         IsHitTestVisible = false; Height = 160; Width = 600;
@@ -53,9 +59,31 @@ internal sealed class TranslationOverlay : Window
         TextAlignment = TextAlignment.Center, Padding = new Thickness(10,5,10,5),
         Margin = new Thickness(0,3,0,0), Visibility = Visibility.Collapsed, MaxHeight = 110
     };
+    internal void QueueSpeech(IReadOnlyList<SpeechCaptionCue> cues)
+    {
+        if (_closed) return;
+        foreach (var cue in cues) {
+            if (_speechQueue.Count >= 4) _speechQueue.Dequeue();
+            _speechQueue.Enqueue((cue, Stopwatch.GetTimestamp()));
+        }
+        Position();
+    }
+    private void AdvanceSpeechCue()
+    {
+        long now = Stopwatch.GetTimestamp();
+        if (_cueUntil > now) return;
+        if (_cueUntil != 0) { Set(_speech,""); _cueUntil = 0; }
+        while (_speechQueue.TryDequeue(out var pending)) {
+            if (Stopwatch.GetElapsedTime(pending.At).TotalSeconds > 12) continue;
+            _history.Clear(); Set(_speech,pending.Cue.Text); _speechAt = now;
+            _cueUntil = now + (long)(Math.Clamp(pending.Cue.DurationSeconds,1.5,6)*Stopwatch.Frequency);
+            break;
+        }
+    }
     internal void SetSpeech(string text, bool replace = false)
     {
         if (_closed || string.IsNullOrWhiteSpace(text)) return;
+        _speechQueue.Clear(); _cueUntil = 0;
         if (replace || (_speechAt != 0 && Stopwatch.GetElapsedTime(_speechAt).TotalSeconds > 12)) _history.Clear();
         Set(_speech, _history.Append(text)); _speechAt = Stopwatch.GetTimestamp(); Position();
     }
@@ -80,6 +108,7 @@ internal sealed class TranslationOverlay : Window
     }
     internal void Clear()
     {
+        _speechQueue.Clear(); _cueUntil = 0;
         _history.Clear(); ClearRegions(); Set(_speech,""); Set(_screen,""); Set(_message,""); Position();
     }
     private void ClearRegions()
@@ -96,6 +125,7 @@ internal sealed class TranslationOverlay : Window
         if (_closed || _positioning) return;
         _positioning = true;
         try {
+            AdvanceSpeechCue();
             if (_speechAt != 0 && Stopwatch.GetElapsedTime(_speechAt).TotalSeconds > 12) Set(_speech,"");
             if (_screenAt != 0 && Stopwatch.GetElapsedTime(_screenAt).TotalSeconds > (_positioned ? 3 : 8)) {
                 Set(_screen,""); ClearRegions();
@@ -119,10 +149,21 @@ internal sealed class TranslationOverlay : Window
             var viewport = ScreenOverlayLayout.Viewport(Width,Height,aspect);
             RenderRegions(viewport);
             _speech.FontSize = _screen.FontSize = Math.Clamp(viewport.Width / 40,12,21);
+            double bottomInset = Math.Max(12,Height-viewport.Y-viewport.Height+12);
+            if (ControlsWindow?.Invoke() is { IsVisible: true } controls && controls.ActualWidth > 0 &&
+                controls.ActualHeight > 0 && PresentationSource.FromVisual(controls)?.CompositionTarget != null) {
+                // Transform screen pixels through the video host for mixed-DPI monitors.
+                var controlTop = video.PointFromScreen(controls.PointToScreen(new Point(0,0)));
+                var controlBottom = video.PointFromScreen(controls.PointToScreen(new Point(controls.ActualWidth,controls.ActualHeight)));
+                if (controlTop.X < viewport.X+viewport.Width && controlBottom.X > viewport.X &&
+                    controlTop.Y < viewport.Y+viewport.Height && controlBottom.Y > viewport.Y)
+                    bottomInset = Math.Max(bottomInset, Height-controlTop.Y+12);
+            }
             _captions.Margin = new Thickness(viewport.X+12,viewport.Y+12,
-                Math.Max(12,Width-viewport.X-viewport.Width+12),Math.Max(12,Height-viewport.Y-viewport.Height+12));
+                Math.Max(12,Width-viewport.X-viewport.Width+12),bottomInset);
             _captions.MaxHeight = Math.Min(280,viewport.Height*0.65);
-            _speech.MaxHeight = Math.Min(110,viewport.Height*0.3);
+            _speech.MaxWidth = Math.Min(760,viewport.Width*0.85);
+            _speech.MaxHeight = Math.Min(_speech.FontSize*2.7+10,viewport.Height*0.3);
             _screen.MaxHeight = Math.Min(140,viewport.Height*0.35);
             // Avoid covering translated news banners with spoken subtitles.
             _captions.VerticalAlignment = _tracked.Any(r => r.Region.Y+r.Region.Height > 0.72)

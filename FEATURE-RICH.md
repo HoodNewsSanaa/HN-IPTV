@@ -1,4 +1,4 @@
-# HN-IPTV Feature Rich preview — 0.12.0
+# HN-IPTV Feature Rich preview — 0.12.1
 
 Branch: `HN-IPTV-Feature-Rich`. Stable main remains separate.
 
@@ -26,7 +26,7 @@ The [benchmark report](TRANSLATION-BENCHMARKS.md) explains why turbo + VAD and O
 
 Silero VAD checks fresh audio for speech before recognition. Low-confidence/repetitive recognition segments are suppressed. Auto can retain a confident detected language briefly, with periodic redetection; a manual language is useful for noisy or short clips. Optional **Reduce steady background noise** applies conservative spectral attenuation, off by default because filtering can also damage recognition.
 
-Captions refresh at phrase boundaries or every 2.5 seconds of continuous audio. Up to 12.5 seconds of preceding audio provides sentence context. A revised rolling translation replaces the previous caption instead of appending duplicate fragments. Empty results preserve readable captions. Only the newest queued segment is retained; stale queued audio is skipped. Caption delay includes collecting audio, model processing and UI scheduling. Simultaneous speakers, accents, music and quiet speech remain difficult.
+Captions refresh at phrase boundaries or every 2.5 seconds of continuous audio. Up to 12.5 seconds of preceding audio provides sentence context. Source words are confirmed across overlapping recognition passes before translation. Confirmed phrases become compact, timed pop-on cues rather than a repeatedly rewritten rolling paragraph. Each cue expires after its reading interval; a bounded queue discards stale cues. Confirmation adds processing delay and cannot guarantee correct recognition or translation. Only the newest queued segment is retained; stale queued audio is skipped. Caption delay includes collecting audio, model processing and UI scheduling. Simultaneous speakers, accents, music and quiet speech remain difficult.
 
 Process loopback captures rendered audio, so mute/zero volume may produce silence depending on Windows audio behavior.
 
@@ -50,7 +50,7 @@ Inference communicates through local stdin/stdout with network connections and D
 
 ## Fullscreen and controls
 
-Returning from Alt-Tab reveals fullscreen controls and restores keyboard focus. Esc/F exits fullscreen without replacing the native video window. Overlay callbacks guard against closed windows and reentrant activation, including PiP return. Toggle controls use darker active backgrounds; CC and mute retain explicit labels.
+Returning from Alt-Tab reveals fullscreen controls and restores keyboard focus. Esc/F exits fullscreen without replacing the native video window. Overlay callbacks guard against closed windows and reentrant activation, including PiP return. Translated speech and separate text captions move above the fullscreen toolbar while it is visible and return when it hides. Coordinate conversion accounts for display DPI. Toggle controls use darker active backgrounds; CC and mute retain explicit labels.
 
 ## Validation
 

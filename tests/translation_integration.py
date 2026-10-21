@@ -20,6 +20,7 @@ def main():
     import numpy as np
     from PIL import Image, ImageDraw, ImageFont
     root = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(root / "HN-IPTV/TranslationRuntime"))
     process = subprocess.Popen([sys.executable, str(root / "HN-IPTV/TranslationRuntime/worker.py"),
         "--models", args.models, "--size", "tiny", "--device", "auto"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL, text=True, encoding="utf-8")
@@ -117,6 +118,33 @@ def main():
             assert not response.get("error") and re.search("hola|mundo|prueba|traducci", response["text"], re.I), response
             report["staged_speech_pipeline"] = True
         finally: staged.kill(); staged.wait()
+        timed = subprocess.Popen([sys.executable, str(root / "HN-IPTV/TranslationRuntime/worker.py"),
+            "--models", args.models, "--size", "tiny", "--device", "cpu", "--pipeline", "staged"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, encoding="utf-8")
+        try:
+            with wave.open(io.BytesIO(output_audio),"rb") as wav:
+                pcm=wav.readframes(wav.getnframes()); duration=wav.getnframes()/44100
+            def timed_request(raw, end, context):
+                timed.stdin.write(json.dumps({"id":101,"kind":"audio","data":base64.b64encode(raw).decode(),
+                    "source":"en","target":"es","context_seconds":context,"audio_end_seconds":end})+"\n")
+                timed.stdin.flush()
+                response=json.loads(timed.stdout.readline())
+                assert not response.get("error"),response
+                return response
+            initial=timed_request(output_audio,duration,0)
+            assert not initial.get("speech_cues"),"Provisional first recognition was displayed"
+            tail=io.BytesIO()
+            with wave.open(tail,"wb") as wav:
+                wav.setnchannels(2);wav.setsampwidth(2);wav.setframerate(44100)
+                wav.writeframes(pcm+bytes(44100*4))
+            confirmed=timed_request(tail.getvalue(),duration+1,duration)
+            cues=confirmed.get("speech_cues",[])
+            assert cues and any(re.search("hola|mundo|prueba|traducci",c["text"],re.I) for c in cues),confirmed
+            assert all(1.5<=c["duration_seconds"]<=6 for c in cues),cues
+            repeated=timed_request(tail.getvalue(),duration+1,duration)
+            assert not repeated.get("speech_cues"),"Committed caption was duplicated"
+            report["confirmed_timed_captions"]=True
+        finally:timed.kill();timed.wait()
         report["passed"] = True
         report["network_disabled_in_worker"] = True
     finally:

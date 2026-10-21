@@ -151,7 +151,7 @@ internal sealed class LocalTranslationWorker : IAsyncDisposable
         // Consume diagnostics without logging media content.
         _errors = Task.Run(async () => { try { while (await _process.StandardError.ReadLineAsync() != null) { } } catch { } });
     }
-    internal async Task<TranslationResult> TranslateAsync(string kind, byte[] data, TranslationSettings settings, CancellationToken ct, double contextSeconds = 0)
+    internal async Task<TranslationResult> TranslateAsync(string kind, byte[] data, TranslationSettings settings, CancellationToken ct, double contextSeconds = 0, double? audioEndSeconds = null)
     {
         await _gate.WaitAsync(ct);
         try
@@ -159,7 +159,7 @@ internal sealed class LocalTranslationWorker : IAsyncDisposable
             using var timing = App.Measure("translation." + kind);
             long id = ++_sequence;
             var line = JsonSerializer.Serialize(new { id, kind, data = Convert.ToBase64String(data),
-                source = settings.InputLanguage, target = settings.Target, context_seconds = contextSeconds });
+                source = settings.InputLanguage, target = settings.Target, context_seconds = contextSeconds, audio_end_seconds = audioEndSeconds });
             await _process.StandardInput.WriteLineAsync(line.AsMemory(), ct);
             await _process.StandardInput.FlushAsync(ct);
             var response = await _process.StandardOutput.ReadLineAsync(ct).AsTask().WaitAsync(TimeSpan.FromMinutes(2), ct)
@@ -178,6 +178,16 @@ internal sealed class LocalTranslationWorker : IAsyncDisposable
                         box.TryGetProperty("foreground", out var fg) ? fg.GetString() ?? "#FFFFFF" : "#FFFFFF");
                     if (ScreenOverlayLayout.Valid(region)) regions.Add(region);
                 }
+            List<SpeechCaptionCue>? cues = null;
+            if (root.TryGetProperty("speech_cues", out var cueArray) && cueArray.ValueKind == JsonValueKind.Array) {
+                cues = [];
+                foreach (var cue in cueArray.EnumerateArray().Take(8)) {
+                    string text = cue.GetProperty("text").GetString() ?? "";
+                    double duration = cue.GetProperty("duration_seconds").GetDouble();
+                    if (!string.IsNullOrWhiteSpace(text) && double.IsFinite(duration))
+                        cues.Add(new SpeechCaptionCue(text[..Math.Min(160,text.Length)], Math.Clamp(duration,1.5,6)));
+                }
+            }
             return new TranslationResult(root.GetProperty("text").GetString() ?? "", root.GetProperty("source").GetString() ?? "",
                 root.GetProperty("target").GetString() ?? "", error,
                 root.TryGetProperty("backend", out var backend) ? backend.GetString() ?? "" : "",
@@ -185,7 +195,7 @@ internal sealed class LocalTranslationWorker : IAsyncDisposable
                 root.TryGetProperty("regions", out _) ? regions : null,
                 root.TryGetProperty("frame_width", out var fw) ? fw.GetInt32() : 0,
                 root.TryGetProperty("frame_height", out var fh) ? fh.GetInt32() : 0,
-                root.TryGetProperty("replace_speech", out var replace) && replace.GetBoolean());
+                root.TryGetProperty("replace_speech", out var replace) && replace.GetBoolean(), cues);
         }
         finally { _gate.Release(); }
     }

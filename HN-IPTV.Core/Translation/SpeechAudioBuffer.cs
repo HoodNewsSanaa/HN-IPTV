@@ -9,9 +9,12 @@ public sealed class SpeechAudioBuffer
     private readonly MemoryStream _pending = new();
     private byte[] _context = [];
     private int _quietBytes;
+    private long _totalBytes;
+    public double AudioEndSeconds => (double)_totalBytes / BytesPerSecond;
     public double LastContextSeconds { get; private set; }
     public byte[]? Append(ReadOnlySpan<byte> pcm)
     {
+        _totalBytes += pcm.Length;
         _pending.Write(pcm);
         long energy = 0;
         var samples = MemoryMarshal.Cast<byte, short>(pcm);

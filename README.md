@@ -1,4 +1,4 @@
-# HN-IPTV 0.12.0 — Feature Rich preview
+# HN-IPTV 0.12.1 — Feature Rich preview
 
 See [FEATURE-RICH.md](FEATURE-RICH.md) for local translation setup, fullscreen fixes and installable branch artifacts. The installer upgrades an existing stable copy in place and preserves saved data.
 

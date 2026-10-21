@@ -1,4 +1,4 @@
-param([switch]$PortableOnly, [switch]$FastStartup, [string]$Version = '0.12.0', [switch]$UseExistingPublish, [switch]$QuickCompression, [ValidateSet('vlc','mpv')][string]$Engine = 'mpv')
+param([switch]$PortableOnly, [switch]$FastStartup, [string]$Version = '0.12.1', [switch]$UseExistingPublish, [switch]$QuickCompression, [ValidateSet('vlc','mpv')][string]$Engine = 'mpv')
 $ErrorActionPreference = 'Stop'
 if (-not $UseExistingPublish) {
     & (Join-Path $PSScriptRoot 'build-windows.ps1') -FastStartup:$FastStartup -Version $Version -Engine $Engine

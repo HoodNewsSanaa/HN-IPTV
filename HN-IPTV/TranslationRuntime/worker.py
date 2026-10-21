@@ -13,6 +13,8 @@ import socket
 import sys
 import time
 import zipfile
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from speech_cues import SpeechCueCommitter, split_cues
 from collections import OrderedDict
 
 OCR_GROUPS = {
@@ -369,6 +371,7 @@ class Engine:
         self.cache = OrderedDict()
         self.last_language = None
         self.last_speech = ""
+        self.cue_committer = SpeechCueCommitter()
         self.screen_snapshot = None
         self.ready = json.loads((self.root / "ready.json").read_text("utf-8"))
 
@@ -521,10 +524,10 @@ class Engine:
             return {"text": "", "source": source, "target": target}
         return self.execute(load)
 
-    def audio(self, payload, source, target, context_seconds=0):
-        return self.execute(lambda: self._audio(payload, source, target, context_seconds))
+    def audio(self, payload, source, target, context_seconds=0, audio_end_seconds=None):
+        return self.execute(lambda: self._audio(payload, source, target, context_seconds, audio_end_seconds))
 
-    def _audio(self, payload, source, target, context_seconds=0):
+    def _audio(self, payload, source, target, context_seconds=0, audio_end_seconds=None):
         from faster_whisper import WhisperModel
         import numpy as np
         import wave
@@ -539,29 +542,59 @@ class Engine:
         from faster_whisper.vad import get_speech_timestamps, VadOptions
         if self.noise:
             signal = suppress_noise(signal)
+        timed = audio_end_seconds is not None
+        final = False
+        window_duration = len(signal) / 16000
+        window_start = float(audio_end_seconds or 0) - window_duration
         if context_seconds > 0:
             fresh = signal[min(len(signal), int(context_seconds * 16000)):]
             if len(fresh) < 512 or not get_speech_timestamps(fresh, VadOptions(**VAD_PARAMETERS)):
-                return {"text": "", "source": self.last_language or source, "target": target}
+                if not timed or not self.cue_committer.pending():
+                    return {"text": "", "source": self.last_language or source, "target": target}
+                final = True
         # Analyze short live windows before decoding; music/silence should not create captions.
         spans = get_speech_timestamps(signal, VadOptions(**VAD_PARAMETERS))
-        if not spans or spans[-1]["end"] <= max(0, context_seconds) * 16000:
+        if not spans or (not final and spans[-1]["end"] <= max(0, context_seconds) * 16000):
             return {"text": "", "source": self.last_language or source, "target": target}
         # Preserve timing inside a phrase while trimming leading/trailing non-speech.
+        trim_start = spans[0]["start"] / 16000
+        final = final or spans[-1]["end"] / 16000 < window_duration - .6
         signal = signal[spans[0]["start"]:spans[-1]["end"]]
         staged = self.uses_staged(source, target)
         language = source if source != "auto" else (self.last_language if time.monotonic() < self.language_until else None)
         segments, info = self.speech.transcribe(signal, language=language,
             task="transcribe" if staged else "translate",
             beam_size=2, condition_on_previous_text=False, vad_filter=False,
-            no_speech_threshold=0.65, temperature=0)
+            no_speech_threshold=0.65, temperature=0, word_timestamps=timed)
+        segments = list(segments)
         text = " ".join(s.text.strip() for s in segments
             if not (s.no_speech_prob > 0.65 or s.avg_logprob < -1.2 or s.compression_ratio > 2.4)).strip()
         detected = normalize(info.language)
         if text:
             self.last_language = detected
             if language is None and getattr(info, "language_probability", 0) >= 0.8:
-                self.language_until = time.monotonic() + 15
+                self.language_until = time.monotonic() + 5
+        if timed:
+            words = []
+            for segment in segments:
+                if segment.no_speech_prob > .65 or segment.avg_logprob < -1.2 or segment.compression_ratio > 2.4:
+                    continue
+                for word in segment.words or []:
+                    words.append({"text":word.word, "start":window_start+trim_start+word.start,
+                        "end":window_start+trim_start+word.end, "probability":word.probability})
+            before_commit = (self.cue_committer.previous, self.cue_committer.committed_until)
+            phrases = self.cue_committer.update(words, float(audio_end_seconds), window_start, final)
+            cues = []
+            # Translate the confirmed phrase group together before splitting display cues.
+            # Display length must not strip the translator of grammatical context.
+            try:
+                for phrase in ([" ".join(phrases)] if phrases else []):
+                    translated = self.translate(phrase, detected, target) if staged else phrase
+                    cues.extend(split_cues(translated))
+            except Exception:
+                self.cue_committer.previous, self.cue_committer.committed_until = before_commit
+                raise
+            return {"text":"", "source":detected, "target":target, "speech_cues":cues}
         if staged:
             text = self.translate(text, detected, target)
         # Replace the rolling caption so revised translations never append duplicate phrases.
@@ -669,7 +702,7 @@ def run(root, size, device="auto", text_model="auto", pipeline="auto", noise=Fal
                 if kind.startswith("prepare_"):
                     result = engine.prepare(kind.removeprefix("prepare_"), source, target)
                 elif kind == "audio":
-                    result = engine.audio(payload, source, target, min(20, max(0, float(request.get("context_seconds", 0)))))
+                    result = engine.audio(payload, source, target, min(20, max(0, float(request.get("context_seconds", 0)))), request.get("audio_end_seconds"))
                 elif kind == "screen":
                     result = engine.screen(payload, source, target)
                 else:

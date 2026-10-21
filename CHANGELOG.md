@@ -1,3 +1,11 @@
+# 0.12.1 Feature Rich preview
+
+- Move translated speech captions and the separate text-caption bar above the visible fullscreen toolbar, using its measured bounds with DPI-aware coordinate conversion; restore the normal position when controls hide.
+- Replace provisional rolling paragraphs with compact timed speech cues. Confirm source words across recognition passes, retain sentence context, translate confirmed phrases together, then split for display.
+- Expire each cue after its reading interval, suppress duplicate committed words, and bound the caption queue.
+- Add fullscreen toolbar-clearance and caption-expiry regressions plus real offline timed-phrase confirmation checks.
+- Reuse the existing runtime, models and CUDA downloads. Stable main remains unchanged.
+
 # 0.12.0 Feature Rich preview
 
 - Translate visible text at its original position, with fitted lettering, sampled background masks, tracked regions and separate speech captions. Keep the caption-bar option.
