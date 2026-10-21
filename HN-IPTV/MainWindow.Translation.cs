@@ -37,7 +37,7 @@ public partial class MainWindow
         };
     }
     private TranslationOverlay CreateTranslationOverlay() => new(() =>
-        _pip == null ? (this, VideoView) : (_pip, _pip.VideoHost));
+        _pip == null ? (this, VideoView) : (_pip, _pip.VideoHost), () => _streamInfo.AspectRatio);
     private void ResetTranslationOverlay()
     {
         var previous = _translationOverlay; _translationOverlay = null;
@@ -152,10 +152,10 @@ public partial class MainWindow
         try {
             await foreach (var chunk in capture.Chunks.ReadAllAsync(ct))
             {
-                if (_userPaused) continue;
+                if (_userPaused || System.Diagnostics.Stopwatch.GetElapsedTime(chunk.CapturedAt).TotalSeconds > 4) continue;
                 _audioInference = true;
                 TranslationResult result;
-                try { result = await worker.TranslateAsync("audio", chunk, settings, ct); }
+                try { result = await worker.TranslateAsync("audio", chunk.Wave, settings, ct, chunk.ContextSeconds); }
                 finally { _audioInference = false; }
                 if (ct.IsCancellationRequested || !_translationGeneration.IsCurrent(generation)) return;
                 ApplyTranslation(result, true);
@@ -168,6 +168,7 @@ public partial class MainWindow
     private async Task TranslateVideoLoopAsync(LocalTranslationWorker worker, TranslationSettings settings,
         long generation, CancellationToken ct)
     {
+        byte[]? pausedFrame = null;
         try {
             while (!ct.IsCancellationRequested)
             {
@@ -175,7 +176,10 @@ public partial class MainWindow
                 if ((!_minimized || _pip != null) && !_audioInference)
                 {
                     byte[]? frame = null;
-                    try { frame = await _playback.CaptureVideoFrameAsync(ct); }
+                    try {
+                        frame = _userPaused && pausedFrame != null ? pausedFrame : await _playback.CaptureVideoFrameAsync(ct);
+                        pausedFrame = frame;
+                    }
                     catch (OperationCanceledException) { throw; }
                     catch (Exception ex) {
                         App.LogException("translation.screen.capture", ex);
@@ -188,7 +192,7 @@ public partial class MainWindow
                         ApplyTranslation(result, false);
                     }
                 }
-                await Task.Delay(Math.Max(200, 1000 - (int)cycle.ElapsedMilliseconds), ct);
+                await Task.Delay(Math.Max(200, 500 - (int)cycle.ElapsedMilliseconds), ct);
             }
         }
         catch (OperationCanceledException) { }
@@ -208,9 +212,11 @@ public partial class MainWindow
             _translationBackend = backend;
             SetStatus("Local translation: " + result.Backend + (result.Notice == null ? "." : ". " + result.Notice));
         }
-        if (speech) _translationOverlay?.SetSpeech(result.Text);
+        if (speech) _translationOverlay?.SetSpeech(result.Text, result.ReplaceSpeech);
         else {
-            _translationOverlay?.SetScreen(result.Text);
+            if (_translationSettings.ScreenOverlay == "positioned" && result.Regions != null)
+                _translationOverlay?.SetScreenRegions(result.Regions, result.FrameWidth, result.FrameHeight, result.Target);
+            else _translationOverlay?.SetScreen(result.Text);
             if (string.IsNullOrWhiteSpace(result.Text) && (_emptyScreenMessageAt == 0 ||
                 System.Diagnostics.Stopwatch.GetElapsedTime(_emptyScreenMessageAt).TotalSeconds > 15)) {
                 _emptyScreenMessageAt = System.Diagnostics.Stopwatch.GetTimestamp();

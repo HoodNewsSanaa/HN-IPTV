@@ -62,7 +62,7 @@ internal static class LocalTranslationRuntime
         }
         progress("Downloading requested language models. Existing models stay cached...");
         await RunAsync([Worker, "--setup", "--models", Models, "--size", settings.SpeechModel,
-            "--inputs", string.Join(",", settings.InstalledInputs), "--target", settings.Target, "--device", settings.Acceleration], progress, ct);
+            "--inputs", string.Join(",", settings.InstalledInputs), "--target", settings.Target, "--device", settings.Acceleration, "--text-model", settings.TextModel], progress, ct);
     }
     private static async Task<bool> HasNvidiaGpuAsync(CancellationToken ct)
     {
@@ -140,15 +140,18 @@ internal sealed class LocalTranslationWorker : IAsyncDisposable
     private readonly Task _errors;
     internal LocalTranslationWorker(TranslationSettings settings)
     {
-        var info = LocalTranslationRuntime.StartInfo([LocalTranslationRuntime.Worker, "--models", LocalTranslationRuntime.Models,
-            "--size", settings.SpeechModel, "--device", settings.Acceleration]);
+        var arguments = new List<string> { LocalTranslationRuntime.Worker, "--models", LocalTranslationRuntime.Models,
+            "--size", settings.SpeechModel, "--device", settings.Acceleration, "--text-model", settings.TextModel,
+            "--pipeline", settings.SpeechPipeline };
+        if (settings.NoiseSuppression) arguments.Add("--noise");
+        var info = LocalTranslationRuntime.StartInfo(arguments);
         info.Environment["HF_HUB_OFFLINE"] = "1";
         info.Environment["TRANSFORMERS_OFFLINE"] = "1";
         _process = Process.Start(info) ?? throw new IOException("Could not start local translation.");
         // Consume diagnostics without logging media content.
         _errors = Task.Run(async () => { try { while (await _process.StandardError.ReadLineAsync() != null) { } } catch { } });
     }
-    internal async Task<TranslationResult> TranslateAsync(string kind, byte[] data, TranslationSettings settings, CancellationToken ct)
+    internal async Task<TranslationResult> TranslateAsync(string kind, byte[] data, TranslationSettings settings, CancellationToken ct, double contextSeconds = 0)
     {
         await _gate.WaitAsync(ct);
         try
@@ -156,7 +159,7 @@ internal sealed class LocalTranslationWorker : IAsyncDisposable
             using var timing = App.Measure("translation." + kind);
             long id = ++_sequence;
             var line = JsonSerializer.Serialize(new { id, kind, data = Convert.ToBase64String(data),
-                source = settings.InputLanguage, target = settings.Target });
+                source = settings.InputLanguage, target = settings.Target, context_seconds = contextSeconds });
             await _process.StandardInput.WriteLineAsync(line.AsMemory(), ct);
             await _process.StandardInput.FlushAsync(ct);
             var response = await _process.StandardOutput.ReadLineAsync(ct).AsTask().WaitAsync(TimeSpan.FromMinutes(2), ct)
@@ -165,10 +168,24 @@ internal sealed class LocalTranslationWorker : IAsyncDisposable
             var root = result.RootElement;
             if (root.GetProperty("id").GetInt64() != id) throw new IOException("Translation response was out of sequence.");
             string? error = root.TryGetProperty("error", out var value) ? value.GetString() : null;
+            var regions = new List<ScreenTranslationRegion>();
+            if (root.TryGetProperty("regions", out var boxes) && boxes.ValueKind == JsonValueKind.Array)
+                foreach (var box in boxes.EnumerateArray().Take(32)) {
+                    var region = new ScreenTranslationRegion(box.GetProperty("x").GetDouble(), box.GetProperty("y").GetDouble(),
+                        box.GetProperty("width").GetDouble(), box.GetProperty("height").GetDouble(),
+                        box.GetProperty("text").GetString() ?? "",
+                        box.TryGetProperty("background", out var bg) ? bg.GetString() ?? "#101010" : "#101010",
+                        box.TryGetProperty("foreground", out var fg) ? fg.GetString() ?? "#FFFFFF" : "#FFFFFF");
+                    if (ScreenOverlayLayout.Valid(region)) regions.Add(region);
+                }
             return new TranslationResult(root.GetProperty("text").GetString() ?? "", root.GetProperty("source").GetString() ?? "",
                 root.GetProperty("target").GetString() ?? "", error,
                 root.TryGetProperty("backend", out var backend) ? backend.GetString() ?? "" : "",
-                root.TryGetProperty("notice", out var notice) ? notice.GetString() : null);
+                root.TryGetProperty("notice", out var notice) ? notice.GetString() : null,
+                root.TryGetProperty("regions", out _) ? regions : null,
+                root.TryGetProperty("frame_width", out var fw) ? fw.GetInt32() : 0,
+                root.TryGetProperty("frame_height", out var fh) ? fh.GetInt32() : 0,
+                root.TryGetProperty("replace_speech", out var replace) && replace.GetBoolean());
         }
         finally { _gate.Release(); }
     }

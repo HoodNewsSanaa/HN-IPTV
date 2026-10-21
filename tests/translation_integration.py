@@ -47,7 +47,8 @@ def main():
         output = io.BytesIO()
         with wave.open(output, "wb") as wav:
             wav.setnchannels(2); wav.setsampwidth(2); wav.setframerate(44100); wav.writeframes(stereo.tobytes())
-        translated_audio = request("audio", output.getvalue())
+        output_audio = output.getvalue()
+        translated_audio = request("audio", output_audio)
         assert re.search("hola|mundo|prueba|traducci", translated_audio, re.I), translated_audio
         image = Image.new("RGB", (1000, 260), "white")
         draw = ImageDraw.Draw(image)
@@ -56,6 +57,14 @@ def main():
         output = io.BytesIO(); image.save(output, format="PNG")
         translated_text = request("screen", output.getvalue())
         assert re.search("hola|mundo", translated_text, re.I), translated_text
+        positioned = report["screen_es_result"]
+        assert positioned["frame_width"] == 1000 and positioned["frame_height"] == 260
+        assert positioned["regions"], "OCR geometry was discarded"
+        for region in positioned["regions"]:
+            assert 0 <= region["x"] < 1 and 0 <= region["y"] < 1
+            assert 0 < region["width"] <= 1 and 0 < region["height"] <= 1
+            assert region["text"] and re.fullmatch(r"#[0-9A-F]{6}", region["background"])
+        report["positioned_regions"] = True
         # Only the moving background changes; the text patches must reuse the recognized result.
         draw.rectangle((950, 0, 999, 40), fill="blue")
         output = io.BytesIO(); image.save(output, format="PNG")
@@ -86,6 +95,28 @@ def main():
                     print("Diagnostic", numeric, beam, result.hypotheses)
                 del model
             raise AssertionError(translated_bpe)
+        # The new standalone OPUS pack must load offline, without Transformers installed.
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("selected_worker", root / "HN-IPTV/TranslationRuntime/worker.py")
+        selected = importlib.util.module_from_spec(spec); spec.loader.exec_module(selected)
+        selected.block_network()
+        engine = selected.Engine(args.models, "tiny", device="cpu")
+        tokenizer, _, _ = engine.pair("ar", "en")
+        assert isinstance(tokenizer, selected.MarianTokenizer), "Auto did not select the prepared OPUS model"
+        opus = engine.translate("\u0645\u0631\u062d\u0628\u0627 \u0628\u0627\u0644\u0639\u0627\u0644\u0645", "ar", "en")
+        assert re.search("world", opus, re.I), opus
+        report["selected_opus_offline"] = {"text": opus, "passed": True}
+        # Exercise separate recognition -> text translation using the real app protocol.
+        staged = subprocess.Popen([sys.executable, str(root / "HN-IPTV/TranslationRuntime/worker.py"),
+            "--models", args.models, "--size", "tiny", "--device", "cpu", "--pipeline", "staged"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, encoding="utf-8")
+        try:
+            staged.stdin.write(json.dumps({"id": 99, "kind": "audio", "data": base64.b64encode(output_audio).decode(),
+                "source": "en", "target": "es"})+"\n"); staged.stdin.flush()
+            response = json.loads(staged.stdout.readline())
+            assert not response.get("error") and re.search("hola|mundo|prueba|traducci", response["text"], re.I), response
+            report["staged_speech_pipeline"] = True
+        finally: staged.kill(); staged.wait()
         report["passed"] = True
         report["network_disabled_in_worker"] = True
     finally:

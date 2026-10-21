@@ -333,10 +333,12 @@ Check(GitHubUpdates.Parse(previewJson, new Version(0,9,2), false, true) != null,
 Check(GitHubUpdates.Parse(previewJson, new Version(0,9,2), false) == null, "stable update channel excludes previews");
 Check(GitHubUpdates.Parse(updateJson, new Version(0,9,2), false, true) == null, "feature update channel does not switch to stable builds");
 var translationSettings = new HnIptv.Translation.TranslationSettings { InputLanguage = "JA-jp", OutputLanguage = "es", SpeechModel = "invalid", Acceleration = "invalid" }.Normalize();
-Check(translationSettings.InputLanguage == "ja" && translationSettings.Target == "es" && translationSettings.SpeechModel == "base", "translation language/model normalization");
+Check(translationSettings.InputLanguage == "ja" && translationSettings.Target == "es" && translationSettings.SpeechModel == "auto", "translation language/model normalization");
 Check(translationSettings.Acceleration == "auto", "invalid acceleration falls back to auto");
 var gpuSettings = (translationSettings with { SpeechModel = "medium", Acceleration = "cuda" }).Normalize();
 Check(gpuSettings.SpeechModel == "medium" && gpuSettings.Acceleration == "cuda", "medium GPU translation settings remain selectable");
+var automaticTranslation = new HnIptv.Translation.TranslationSettings { SpeechModel = "turbo", SpeechPipeline = "staged", TextModel = "auto", NoiseSuppression = true }.Normalize();
+Check(automaticTranslation.SpeechModel == "turbo" && automaticTranslation.SpeechPipeline == "staged" && automaticTranslation.NoiseSuppression, "separate speech translation and optional noise settings persist");
 var translationVersion = new HnIptv.Translation.TranslationGeneration();
 long firstTranslation = translationVersion.Current;
 translationVersion.Advance();
@@ -356,13 +358,38 @@ var segmenter = new HnIptv.Translation.SpeechAudioBuffer();
 byte[] voicedPacket = new byte[HnIptv.Translation.SpeechAudioBuffer.BytesPerSecond / 10];
 for (int i = 0; i < voicedPacket.Length; i += 2) { voicedPacket[i] = 0; voicedPacket[i + 1] = 10; }
 byte[]? speechSegment = null;
-for (int i = 0; i < 35; i++) speechSegment = segmenter.Append(voicedPacket);
-Check(speechSegment?.Length == HnIptv.Translation.SpeechAudioBuffer.BytesPerSecond * 7 / 2, "continuous speech is emitted within 3.5 seconds");
+for (int i = 0; i < 25; i++) speechSegment = segmenter.Append(voicedPacket);
+Check(speechSegment?.Length == HnIptv.Translation.SpeechAudioBuffer.BytesPerSecond * 5 / 2, "continuous speech is emitted within 2.5 seconds");
 for (int i = 0; i < 15; i++) segmenter.Append(voicedPacket);
 byte[] silence = new byte[voicedPacket.Length];
 for (int i = 0; i < 3; i++) speechSegment = segmenter.Append(silence);
-Check(speechSegment != null && speechSegment.Length > HnIptv.Translation.SpeechAudioBuffer.BytesPerSecond * 2, "phrase segmentation carries overlap across a pause");
-Console.WriteLine("Translation settings, caption continuity, phrase segmentation and stale-result cancellation checks passed.");
+Check(speechSegment != null && speechSegment.Length >= HnIptv.Translation.SpeechAudioBuffer.BytesPerSecond * 2, "phrase segmentation carries overlap across a pause");
+var rollingAudio = new HnIptv.Translation.SpeechAudioBuffer();
+int rollingEmissions = 0;
+for (int packet = 0; packet < 250; packet++)
+    if (rollingAudio.Append(voicedPacket) is { } rollingSegment) {
+        rollingEmissions++;
+        Check(rollingSegment.Length <= HnIptv.Translation.SpeechAudioBuffer.BytesPerSecond * 15, "rolling audio memory stays bounded");
+        if (rollingEmissions > 1) Check(rollingAudio.LastContextSeconds >= 2.5, "recognition retains sentence context");
+    }
+Check(rollingEmissions == 10, "continuous rolling captions refresh every 2.5 seconds");
+var screenViewport = HnIptv.Translation.ScreenOverlayLayout.Viewport(1280, 960, 16d / 9);
+Check(Math.Abs(screenViewport.Y - 120) < 0.001 && Math.Abs(screenViewport.Height - 720) < 0.001, "overlay respects letterboxing");
+var translatedRegion = new HnIptv.Translation.ScreenTranslationRegion(0.1, 0.8, 0.4, 0.1, "Translated headline");
+var mappedRegion = HnIptv.Translation.ScreenOverlayLayout.Map(translatedRegion, screenViewport);
+Check(Math.Abs(mappedRegion.X - 128) < 0.001 && Math.Abs(mappedRegion.Y - 696) < 0.001, "OCR coordinates map into decoded video area");
+var clippedRegion = HnIptv.Translation.ScreenOverlayLayout.Map(translatedRegion with { X = -0.1, Width = 0.2 }, screenViewport);
+Check(Math.Abs(clippedRegion.Width - 128) < 0.001, "partly offscreen overlay clips safely");
+Check(!HnIptv.Translation.ScreenOverlayLayout.Valid(translatedRegion with { X = double.NaN }), "non-finite overlay rejected");
+var regionTracker = new HnIptv.Translation.ScreenRegionTracker();
+var firstRegion = regionTracker.Update(new[] { translatedRegion })[0];
+var jitteredRegion = regionTracker.Update(new[] { translatedRegion with { X = 0.105 } })[0];
+Check(firstRegion.Id == jitteredRegion.Id && jitteredRegion.Region.X < 0.105, "overlay keeps identity and smooths small OCR jitter");
+Check(regionTracker.Update(Array.Empty<HnIptv.Translation.ScreenTranslationRegion>()).Count == 1, "single missed OCR frame does not flash");
+Check(regionTracker.Update(Array.Empty<HnIptv.Translation.ScreenTranslationRegion>()).Count == 0, "stale translated boxes disappear");
+regionTracker.Clear();
+Check(HnIptv.Translation.TranslationSettings.Load(translationFile+"-missing-overlay-test").ScreenOverlay == "positioned", "new screen overlay default");
+Console.WriteLine("Translation settings, caption continuity, phrase segmentation, positioned overlays and stale-result cancellation checks passed.");
 
 static void Check(bool condition, string name)
 {

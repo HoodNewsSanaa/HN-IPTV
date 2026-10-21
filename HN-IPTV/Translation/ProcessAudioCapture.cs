@@ -6,13 +6,15 @@ namespace HnIptv;
 
 // Windows application loopback, never endpoint/system-wide loopback.
 // Format matches Microsoft's ApplicationLoopback sample: 44.1 kHz stereo PCM16.
+internal sealed record CapturedAudio(byte[] Wave, long CapturedAt, double ContextSeconds);
+
 internal sealed class ProcessAudioCapture : IAsyncDisposable
 {
     private readonly CancellationTokenSource _stop = new();
-    private readonly Channel<byte[]> _chunks = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(4) {
+    private readonly Channel<CapturedAudio> _chunks = Channel.CreateBounded<CapturedAudio>(new BoundedChannelOptions(1) {
         FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true, SingleWriter = true });
     private Task _capture = Task.CompletedTask;
-    internal ChannelReader<byte[]> Chunks => _chunks.Reader;
+    internal ChannelReader<CapturedAudio> Chunks => _chunks.Reader;
     internal Task StartAsync()
     {
         if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 20348))
@@ -58,7 +60,7 @@ internal sealed class ProcessAudioCapture : IAsyncDisposable
                         var bytes = new byte[size];
                         if ((flags & 2) == 0 && data != IntPtr.Zero) Marshal.Copy(data, bytes, 0, size);
                         var segment = samples.Append(bytes);
-                        if (segment != null) _chunks.Writer.TryWrite(ToWave(segment));
+                        if (segment != null) _chunks.Writer.TryWrite(new CapturedAudio(ToWave(segment), System.Diagnostics.Stopwatch.GetTimestamp(), samples.LastContextSeconds));
                     }
                     finally { capture.ReleaseBuffer(frames); }
                     capture.GetNextPacketSize(out frames);

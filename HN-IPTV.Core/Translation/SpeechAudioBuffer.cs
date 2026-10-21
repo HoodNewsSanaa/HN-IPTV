@@ -9,6 +9,7 @@ public sealed class SpeechAudioBuffer
     private readonly MemoryStream _pending = new();
     private byte[] _context = [];
     private int _quietBytes;
+    public double LastContextSeconds { get; private set; }
     public byte[]? Append(ReadOnlySpan<byte> pcm)
     {
         _pending.Write(pcm);
@@ -16,13 +17,14 @@ public sealed class SpeechAudioBuffer
         var samples = MemoryMarshal.Cast<byte, short>(pcm);
         foreach (short sample in samples) energy += (long)sample * sample;
         _quietBytes = samples.Length == 0 || energy / Math.Max(1, samples.Length) < 4096 ? _quietBytes + pcm.Length : 0;
-        if (_pending.Length < BytesPerSecond * 3.5 &&
-            (_pending.Length < BytesPerSecond * 1.5 || _quietBytes < BytesPerSecond * 0.3)) return null;
+        if (_pending.Length < BytesPerSecond * 2.5 &&
+            (_pending.Length < BytesPerSecond * 1.0 || _quietBytes < BytesPerSecond * 0.25)) return null;
+        LastContextSeconds = (double)_context.Length / BytesPerSecond;
         var current = _pending.ToArray();
         var segment = new byte[_context.Length + current.Length];
         _context.CopyTo(segment, 0); current.CopyTo(segment, _context.Length);
-        int tail = Math.Min(current.Length, BytesPerSecond * 3 / 4);
-        _context = current.AsSpan(current.Length - tail).ToArray();
+        int tail = Math.Min(segment.Length, BytesPerSecond * 25 / 2);
+        _context = segment.AsSpan(segment.Length - tail).ToArray();
         _pending.SetLength(0); _quietBytes = 0;
         return segment;
     }
