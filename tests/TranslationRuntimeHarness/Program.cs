@@ -36,7 +36,7 @@ try {
     if(rate is not (44100 or 22050)||channels!=1||bits!=16)throw new Exception("Unexpected fixture format.");
     int frames=(int)((long)(pcm.Length/2)*44100/rate);byte[] stereo=new byte[frames*4];
     for(int i=0;i<frames;i++) {
-        double position=i*rate/44100d;int index=(int)position,next=Math.Min(index+1,pcm.Length/2-1);
+        double position=i*(double)rate/44100d;int index=(int)position,next=Math.Min(index+1,pcm.Length/2-1);
         short value=(short)(BitConverter.ToInt16(pcm,index*2)*(1-(position-index))+BitConverter.ToInt16(pcm,next*2)*(position-index));
         BitConverter.TryWriteBytes(stereo.AsSpan(i*4,2),value);BitConverter.TryWriteBytes(stereo.AsSpan(i*4+2,2),value);
     }
