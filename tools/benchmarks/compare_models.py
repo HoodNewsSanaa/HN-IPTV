@@ -18,12 +18,13 @@ def prepare():
     selected=[];genders={}
     for item in rows:
         row=item["row"];gender=str(row.get("gender"))
-        if not 3<=row.get("num_samples",0)/16000<=14 or genders.get(gender,0)>=3:continue
+        if len(selected)==0: print(json.dumps({"row_keys":list(row),"num_samples":row.get("num_samples"),"gender":gender}),flush=True)
         audio=row["audio"];src=audio[0]["src"] if isinstance(audio,list) else audio["src"]
         name="ar-"+str(row["id"])+"-"+str(len(selected))+".wav";fetch(src,OUT/name)
         signal,rate=sf.read(OUT/name)
         if signal.ndim>1:signal=signal.mean(axis=1)
         if rate!=16000:signal=np.interp(np.arange(0,len(signal),rate/16000),np.arange(len(signal)),signal)
+        if not 3<=len(signal)/16000<=18:continue
         sf.write(OUT/name,signal,16000)
         selected.append(dict(id=row["id"],file=name,text=row["transcription"],gender=gender,seconds=len(signal)/16000,sha256=hashlib.sha256((OUT/name).read_bytes()).hexdigest()))
         genders[gender]=genders.get(gender,0)+1
