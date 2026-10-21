@@ -1,3 +1,9 @@
+## Whisper recognition (0.14.0)
+
+Whisper.net 1.9.1 and its native CPU/Vulkan runtimes are distributed under MIT; see licenses/Whisper.net.txt. The underlying whisper.cpp runtime is MIT; see licenses/whisper.cpp.txt. OpenAI Whisper model weights are MIT; the quantized multilingual large-v3-turbo model is downloaded separately from ggerganov/whisper.cpp at revision 98aa99a0a9db05ae2342309f5096248665f7cba3. Model SHA-256: 394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2.
+
+The current package no longer uses NVIDIA NeMo-Speech.cpp. Older acknowledgments below document previous releases.
+
 # Third-party components
 
 - Microsoft .NET 10 / WPF. The self-contained publish includes Microsoft's `LICENSE.txt` and `ThirdPartyNotices.txt`.

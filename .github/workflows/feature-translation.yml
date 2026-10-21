@@ -1,7 +1,7 @@
 name: Feature Rich local translation
 on:
   push:
-    branches: [HN-IPTV-Feature-Rich, HN-IPTV-Nemotron-Trial, HN-IPTV-Generous-Buffer]
+    branches: [HN-IPTV-Feature-Rich, HN-IPTV-Nemotron-Trial, HN-IPTV-Whisper-Buffer]
   pull_request:
     paths: ['HN-IPTV.SpeechWorker/**', 'HN-IPTV/Translation/**', 'HN-IPTV.Core/Translation/**', 'tests/TranslationRuntimeHarness/**']
   workflow_dispatch:
@@ -26,8 +26,8 @@ jobs:
         run: ./build-windows.ps1
       - uses: actions/cache@v4
         with:
-          path: artifacts/nemotron-runtime-data
-          key: native-nemotron-q8-0.2.0-v1
+          path: artifacts/whisper-runtime-data
+          key: native-whisper-turbo-q5-1.9.1-v1
       - name: Generate speech fixture
         shell: powershell
         run: |
@@ -39,7 +39,7 @@ jobs:
           $voice.Speak('Hello world. This is a streaming speech recognition test.')
           $voice.Dispose()
       - name: Actual native speech, reset, silence and safe migration
-        run: dotnet run --project tests/TranslationRuntimeHarness -c Release -- artifacts/publish/HN-IPTV.dll artifacts/nemotron-runtime-data artifacts/native-runtime.json artifacts/spoken.wav
+        run: dotnet run --project tests/TranslationRuntimeHarness -c Release -- artifacts/publish/HN-IPTV.dll artifacts/whisper-runtime-data artifacts/native-runtime.json artifacts/spoken.wav
       - uses: actions/upload-artifact@v4
         if: always()
         with:

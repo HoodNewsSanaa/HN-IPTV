@@ -9,48 +9,40 @@ namespace HnIptv;
 
 internal static class LocalTranslationRuntime
 {
-    internal static string Root=>Path.Combine(AppStorage.DataDirectory,"speech-nemotron");
-    internal static string Models=>Path.Combine(Root,"model.gguf");
+    internal static string Root=>Path.Combine(AppStorage.DataDirectory,"speech-whisper");
+    internal static string Models=>Path.Combine(Root,"ggml-large-v3-turbo-q5_0.bin");
     internal static string Worker=>Path.Combine(Path.GetDirectoryName(typeof(LocalTranslationRuntime).Assembly.Location)!,"HN-IPTV.SpeechWorker.exe");
     internal static bool Ready=>File.Exists(Models)&&File.Exists(Path.Combine(Root,"ready-v1.json"));
     private static readonly HttpClient Http=new(){Timeout=TimeSpan.FromMinutes(30)};
     private static readonly SemaphoreSlim SetupGate=new(1,1);
-    private const string Hash="a5c435f294eea8f88ce68dd27b8c3bfea7f777cb2fbba04fcd30eaa555f429ae";
-    internal static string Runtime(string backend)=>Path.Combine(Root,"runtime-"+backend,"nemo-speech-0.2.0-windows-x86_64-"+backend,"bin");
-    internal static string PreparedBackend {get {try{using var d=JsonDocument.Parse(File.ReadAllText(Path.Combine(Root,"ready-v1.json")));return d.RootElement.GetProperty("backend").GetString()=="cuda"?"cuda":"cpu";}catch{return "cpu";}}}
+    private const string Hash="394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2";
+    internal static string Runtime(string backend)=>Path.GetDirectoryName(Worker)!;
+    internal static string PreparedBackend {get {try{using var d=JsonDocument.Parse(File.ReadAllText(Path.Combine(Root,"ready-v1.json")));return d.RootElement.GetProperty("backend").GetString()=="vulkan"?"vulkan":"cpu";}catch{return "cpu";}}}
     internal static async Task InstallAsync(TranslationSettings settings,Action<string> progress,CancellationToken ct)
     {
         await SetupGate.WaitAsync(ct);
         try {
             Directory.CreateDirectory(Root);
-            bool gpu=settings.Acceleration=="cuda"||settings.Acceleration=="auto"&&await HasGpu(ct);
-            await PrepareRuntime("cpu",progress,ct);if(gpu)await PrepareRuntime("cuda",progress,ct);
             if(!File.Exists(Models)) {
-                progress("Downloading one multilingual Nemotron model (742 MB)...");
-                await Download("https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b/resolve/1c8deaecc64b91f034d73e08dd8b64625eb3395d/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf",Models,Hash,800_000_000,progress,ct);
+                progress("Downloading multilingual Whisper large-v3-turbo Q5 (574 MB)...");
+                await Download("https://huggingface.co/ggerganov/whisper.cpp/resolve/98aa99a0a9db05ae2342309f5096248665f7cba3/ggml-large-v3-turbo-q5_0.bin",Models,Hash,600_000_000,progress,ct);
             }else await PackageIntegrity.VerifyAsync(Models,Hash,ct);
-            progress("Validating native model loading and streaming inference...");
-            string backend=gpu?"cuda":"cpu";
+            string backend=settings.Acceleration=="cpu"?"cpu":"vulkan";
+            progress("Validating Whisper model and "+backend+" inference...");
             try{await Validate(backend,settings,ct);}
             catch(OperationCanceledException){throw;}
-            catch when(gpu&&settings.Acceleration=="auto"){progress("GPU unavailable; validating native CPU fallback.");backend="cpu";await Validate(backend,settings,ct);}
+            catch when(backend=="vulkan"&&settings.Acceleration=="auto"){progress("GPU unavailable; validating CPU fallback. Buffered playback may refill more often on CPU.");backend="cpu";await Validate(backend,settings,ct);}
             await File.WriteAllTextAsync(Path.Combine(Root,"ready-v1.json"),JsonSerializer.Serialize(new{backend,model_sha256=Hash}),ct);
-            await Task.Run(()=>RemoveLegacy(progress),ct);
-            progress("Nemotron ready. Recognition stays local; Azure translates recognized text.");
+            progress("Whisper ready. Azure translates punctuated text; audio stays local. Previous Whisper files are retained for rollback.");
         }finally{SetupGate.Release();}
     }
     private static async Task Validate(string backend,TranslationSettings settings,CancellationToken ct)
     {
         await using var worker=new LocalTranslationWorker(settings,backend);await worker.PrepareAsync(ct);
-        await worker.RecognizeAsync(new byte[176400],ct);await worker.FinishAsync(ct);
-    }
-    private static async Task PrepareRuntime(string backend,Action<string> progress,CancellationToken ct)
-    {
-        if(File.Exists(Path.Combine(Runtime(backend),"nemo_speech_asr_c.dll")))return;
-        progress("Downloading native "+backend+" runtime...");string archive=Path.Combine(Root,backend+".zip");
-        string hash=backend=="cuda"?"9ffe5e842c39a7d3211f3b2c3b3aa1bca8c0b2455d96d961ed5f22ec5108f98d":"82c80451086e86194aba9af19f800da77cd66d1c28d993d0efceffd6cdb49bb8";
-        await Download("https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.2.0/nemo-speech-0.2.0-windows-x86_64-"+backend+".zip",archive,hash,150_000_000,progress,ct);
-        ZipFile.ExtractToDirectory(archive,Path.Combine(Root,"runtime-"+backend),true);File.Delete(archive);
+        // A nonzero, quiet tone forces actual encoder/decoder inference without uploading user audio.
+        var probe=new byte[176400];
+        for(int i=0;i<44100;i++){short sample=(short)(Math.Sin(i*2*Math.PI*440/44100)*200);BitConverter.TryWriteBytes(probe.AsSpan(i*4,2),sample);BitConverter.TryWriteBytes(probe.AsSpan(i*4+2,2),sample);}
+        await worker.RecognizeAsync(probe,ct);await worker.FinishAsync(ct);
     }
     private static async Task Download(string url,string path,string hash,long maximum,Action<string> progress,CancellationToken ct)
     {
@@ -65,26 +57,7 @@ internal static class LocalTranslationRuntime
             await PackageIntegrity.VerifyAsync(temporary,hash,ct);File.Move(temporary,path,true);
         }finally{if(File.Exists(temporary))File.Delete(temporary);}
     }
-    internal static void RemoveLegacy(Action<string> progress)
-    {
-        if(!Ready)return;
-        string data=Path.GetFullPath(AppStorage.DataDirectory).TrimEnd(Path.DirectorySeparatorChar);
-        string legacy=Path.GetFullPath(Path.Combine(data,"translation"));
-        if(!legacy.StartsWith(data+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase)||Path.GetFileName(legacy)!="translation")throw new IOException("Invalid legacy directory.");
-        if(!Directory.Exists(legacy))return;
-        void Check(string path){if((File.GetAttributes(path)&FileAttributes.ReparsePoint)!=0)throw new IOException("Linked legacy folder.");if(Directory.Exists(path))foreach(string child in Directory.EnumerateFileSystemEntries(path))Check(child);}
-        try{Check(legacy);Directory.Delete(legacy,true);progress("Removed old Python, Whisper, OCR, translation packs and their CUDA libraries.");}
-        catch(Exception ex) when(ex is IOException or UnauthorizedAccessException){progress("Some old language files are in use or linked. Close other HN-IPTV copies and run setup again to retry cleanup.");}
-    }
-    private static async Task<bool> HasGpu(CancellationToken ct)
-    {
-        try {
-            var info=new ProcessStartInfo("nvidia-smi.exe"){UseShellExecute=false,CreateNoWindow=true,WindowStyle=ProcessWindowStyle.Hidden,RedirectStandardOutput=true,RedirectStandardError=true};
-            info.ArgumentList.Add("--query-gpu=name");info.ArgumentList.Add("--format=csv,noheader");using var p=Process.Start(info);if(p==null)return false;
-            var output=p.StandardOutput.ReadToEndAsync(ct);var errors=p.StandardError.ReadToEndAsync(ct);
-            try{await p.WaitForExitAsync(ct).WaitAsync(TimeSpan.FromSeconds(5),ct);await errors;return p.ExitCode==0&&!string.IsNullOrWhiteSpace(await output);}finally{if(!p.HasExited)p.Kill(true);}
-        }catch(OperationCanceledException){throw;}catch{return false;}
-    }
+
 }
 
 internal sealed record RecognitionText(string Text,string Language,bool Final,double StartSeconds,double EndSeconds);
@@ -96,10 +69,10 @@ internal sealed class LocalTranslationWorker:IAsyncDisposable
     internal bool CanReuse{get{try{return !_faulted&&_gate.CurrentCount==1&&!_process.HasExited;}catch{return false;}}}
     internal LocalTranslationWorker(TranslationSettings settings,string? backend=null)
     {
-        Backend=backend??(settings.Acceleration=="cpu"?"cpu":LocalTranslationRuntime.PreparedBackend);
+        Backend=backend??(settings.Acceleration is "cpu" or "vulkan"?settings.Acceleration:LocalTranslationRuntime.PreparedBackend);
         var info=new ProcessStartInfo(LocalTranslationRuntime.Worker){UseShellExecute=false,CreateNoWindow=true,WindowStyle=ProcessWindowStyle.Hidden,RedirectStandardOutput=true,RedirectStandardError=true,RedirectStandardInput=true};
-        foreach(string arg in new[]{LocalTranslationRuntime.Runtime(Backend),LocalTranslationRuntime.Models,settings.InputLanguage,Backend})info.ArgumentList.Add(arg);
-        _process=Process.Start(info)??throw new IOException("Could not start Nemotron.");
+        foreach(string arg in new[]{LocalTranslationRuntime.Runtime(Backend),LocalTranslationRuntime.Models,settings.InputLanguage,Backend,settings.BufferSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)})info.ArgumentList.Add(arg);
+        _process=Process.Start(info)??throw new IOException("Could not start Whisper.");
         _errors=Task.Run(async()=>{try{while(await _process.StandardError.ReadLineAsync()!=null){}}catch{}});
     }
     internal async Task PrepareAsync(CancellationToken ct)
@@ -107,8 +80,8 @@ internal sealed class LocalTranslationWorker:IAsyncDisposable
         if(_ready)return;await _gate.WaitAsync(ct);
         try {
             if(_ready)return;
-            string line=await _process.StandardOutput.ReadLineAsync(ct).AsTask().WaitAsync(TimeSpan.FromMinutes(2),ct)??throw new IOException("Nemotron stopped during startup.");
-            using var json=JsonDocument.Parse(line);if(!json.RootElement.GetProperty("ready").GetBoolean())throw new IOException("Nemotron could not load. Prepare the runtime/model or choose CPU.");_ready=true;
+            string line=await _process.StandardOutput.ReadLineAsync(ct).AsTask().WaitAsync(TimeSpan.FromMinutes(2),ct)??throw new IOException("Whisper stopped during startup.");
+            using var json=JsonDocument.Parse(line);if(!json.RootElement.GetProperty("ready").GetBoolean())throw new IOException("Whisper could not load. Prepare the runtime/model or choose CPU.");_ready=true;
         }catch{_faulted=true;throw;}finally{_gate.Release();}
     }
     internal Task<IReadOnlyList<RecognitionText>> RecognizeAsync(byte[] pcm,CancellationToken ct)=>Request("audio",pcm,ct);
@@ -119,9 +92,9 @@ internal sealed class LocalTranslationWorker:IAsyncDisposable
         await PrepareAsync(ct);await _gate.WaitAsync(ct);
         try {
             long id=++_sequence;await _process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(new{id,kind,data=Convert.ToBase64String(data)}).AsMemory(),ct);await _process.StandardInput.FlushAsync(ct);
-            string response=await _process.StandardOutput.ReadLineAsync(ct).AsTask().WaitAsync(TimeSpan.FromSeconds(30),ct)??throw new IOException("Nemotron stopped.");
+            string response=await _process.StandardOutput.ReadLineAsync(ct).AsTask().WaitAsync(TimeSpan.FromMinutes(2),ct)??throw new IOException("Whisper stopped.");
             using var doc=JsonDocument.Parse(response);var root=doc.RootElement;
-            if(root.GetProperty("id").GetInt64()!=id||root.TryGetProperty("error",out _))throw new IOException("Nemotron recognition failed. Prepare the model or choose CPU.");
+            if(root.GetProperty("id").GetInt64()!=id||root.TryGetProperty("error",out _))throw new IOException("Whisper recognition failed. Prepare the model or choose CPU.");
             return root.GetProperty("results").EnumerateArray().Select(x=>new RecognitionText(x.GetProperty("Text").GetString()??"",x.GetProperty("Language").GetString()??"auto",x.GetProperty("Final").GetBoolean(),x.GetProperty("StartSeconds").GetDouble(),x.GetProperty("EndSeconds").GetDouble())).ToArray();
         }catch{_faulted=true;throw;}finally{_gate.Release();}
     }

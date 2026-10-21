@@ -1,3 +1,13 @@
+# 0.14.0
+
+- Replace Nemotron recognition with multilingual Whisper large-v3-turbo Q5 (574 MB), using Whisper.net 1.9.1 and whisper.cpp.
+- Keep Azure text translation and the Live / 10-second / 15-second synchronized playback choices.
+- Decode buffered speech as longer batches with punctuation, language detection, segment timestamps and no-speech filtering. Text cannot convey all vocal tone or emotion.
+- Include native Vulkan GPU and CPU runtimes; no Python environment or CUDA toolkit download. Auto validates GPU inference and falls back to CPU if unavailable.
+- Keep the model resident between batches, resample complete batches to 16 kHz, and isolate native inference from the player.
+- Preserve existing Nemotron downloads for rollback and retain Azure keys, playlists and the FFmpeg media transport.
+- Test actual Whisper speech, punctuation, timestamps, silence/reset and buffered A/V playback before publishing.
+
 # 0.13.1 Feature Rich preview
 
 - Offer Live, Generous time (10 seconds), and Generous time (15 seconds, recommended) when enabling Translate. Remember the timing choice.

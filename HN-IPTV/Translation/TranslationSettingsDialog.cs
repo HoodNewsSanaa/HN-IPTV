@@ -16,16 +16,16 @@ internal sealed class TranslationSettingsDialog:Window
         Title="HN-IPTV — Translation";Width=600;Height=610;MinWidth=480;MinHeight=480;WindowStartupLocation=WindowStartupLocation.CenterOwner;
         var choices=new[]{"auto","en","es","fr","de","pt","it","ar","ja","ko","ru","uk","hi","tr","vi","nl","pl","sv","cs","nb","da","bg","fi","hr","el","hu","ro","sk","sl","et","lv","lt","zh"};
         _input.ItemsSource=choices;_output.ItemsSource=choices;_input.Text=settings.InputLanguage;_output.Text=settings.OutputLanguage;
-        _acceleration.ItemsSource=new[]{"auto","cuda","cpu"};_acceleration.SelectedItem=settings.Acceleration;_region.Text=settings.AzureRegion;
+        _acceleration.ItemsSource=new[]{"auto","vulkan","cpu"};_acceleration.SelectedItem=settings.Acceleration;_region.Text=settings.AzureRegion;
         _buffer.ItemsSource=new[]{"Live captions","Generous time — 10 seconds","Generous time — 15 seconds"};_buffer.SelectedIndex=settings.BufferSeconds==10?1:settings.BufferSeconds==15?2:0;
         try{_azureKey.Password=AzureTranslationCredentials.Load();}catch(Exception ex){_azureStatus.Text=ex.Message;}
         var panel=new StackPanel{Margin=new Thickness(20)};var azure=new StackPanel{Margin=new Thickness(20)};
         void Field(StackPanel p,string label,Control control){p.Children.Add(new TextBlock{Text=label,Margin=new Thickness(0,10,0,4)});p.Children.Add(control);}
-        panel.Children.Add(new TextBlock{Text="Nemotron recognizes speech locally → Azure translates text → timed captions. One multilingual model; no separate language packs. Screen OCR and the old local translators have been retired.",TextWrapping=TextWrapping.Wrap});
+        panel.Children.Add(new TextBlock{Text="Whisper recognizes speech locally → Azure translates text → timed captions. One multilingual model; no separate language packs. Screen OCR and the old local translators have been retired.",TextWrapping=TextWrapping.Wrap});
         Field(panel,"Input language — Auto detects; manual language code is optional",_input);Field(panel,"Output language — Auto uses Windows display language",_output);Field(panel,"Recognition acceleration",_acceleration);
         Field(panel,"Translation timing (also offered when enabling Translate)",_buffer);
-        panel.Children.Add(new TextBlock{Text="Model: Nemotron 3.5 ASR Streaming Q8 (742 MB). Native CPU runtime: 5.5 MB download; optional CUDA runtime: 102 MB. Language accuracy varies; some languages are experimental. Setup validates inference before deleting old Python, Whisper, OCR, translation packs and their CUDA files. Playlists, settings and Azure keys are preserved.",TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,12,0,0)});
-        var install=new Button{Content="Download / prepare Nemotron",Margin=new Thickness(0,12,0,8)};panel.Children.Add(install);panel.Children.Add(_log);
+        panel.Children.Add(new TextBlock{Text="Model: Whisper large-v3-turbo Q5 (574 MB). Native CPU and Vulkan GPU runtimes are included; no Python or CUDA toolkit download. Longer audio batches preserve punctuation and sentence context. Tone and emotion are not fully preserved as text. Existing Nemotron downloads, playlists and Azure keys are retained.",TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,12,0,0)});
+        var install=new Button{Content="Download / prepare Whisper",Margin=new Thickness(0,12,0,8)};panel.Children.Add(install);panel.Children.Add(_log);
         azure.Children.Add(new TextBlock{Text="Azure receives recognized text only. Audio stays on this PC. Your key is encrypted for your Windows account when saved.",TextWrapping=TextWrapping.Wrap});
         Field(azure,"Auth key — Key 1 or Key 2 from Azure Keys and Endpoint",_azureKey);Field(azure,"Region — global, or your resource's region code",_region);
         var test=new Button{Content="Test Azure connection",Margin=new Thickness(0,12,0,8)};azure.Children.Add(test);azure.Children.Add(_azureStatus);

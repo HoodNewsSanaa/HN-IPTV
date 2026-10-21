@@ -335,8 +335,9 @@ Check(GitHubUpdates.Parse(updateJson, new Version(0,9,2), false, true) == null, 
 var translationSettings = new HnIptv.Translation.TranslationSettings { InputLanguage = "JA-jp", OutputLanguage = "es", Acceleration = "invalid" }.Normalize();
 Check(translationSettings.InputLanguage == "ja" && translationSettings.Target == "es", "translation language/model normalization");
 Check(translationSettings.Acceleration == "auto", "invalid acceleration falls back to auto");
-var gpuSettings = (translationSettings with { Acceleration = "cuda" }).Normalize();
-Check(gpuSettings.Acceleration == "cuda", "medium GPU translation settings remain selectable");
+Check((translationSettings with { Acceleration = "cuda" }).Normalize().Acceleration == "auto", "legacy CUDA preference migrates to automatic Whisper acceleration");
+var gpuSettings = (translationSettings with { Acceleration = "vulkan" }).Normalize();
+Check(gpuSettings.Acceleration == "vulkan", "Vulkan GPU recognition remains selectable");
 var translationVersion = new HnIptv.Translation.TranslationGeneration();
 long firstTranslation = translationVersion.Current;
 translationVersion.Advance();
@@ -345,7 +346,7 @@ var translationFile = Path.Combine(Path.GetTempPath(), "hn-translation-" + Guid.
 try {
     gpuSettings.Save(translationFile);
     var savedTranslation = HnIptv.Translation.TranslationSettings.Load(translationFile);
-    Check(savedTranslation.InputLanguage == "ja" && savedTranslation.OutputLanguage == "es" && savedTranslation.Acceleration == "cuda", "manual translation languages and GPU preference persist");
+    Check(savedTranslation.InputLanguage == "ja" && savedTranslation.OutputLanguage == "es" && savedTranslation.Acceleration == "vulkan", "manual translation languages and GPU preference persist");
 } finally { File.Delete(translationFile); }
 var captionHistory = new HnIptv.Translation.CaptionHistory();
 Check(captionHistory.Append("Hello world.") == "Hello world.", "initial caption");

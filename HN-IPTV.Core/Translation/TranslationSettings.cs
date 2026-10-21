@@ -22,7 +22,7 @@ public sealed record TranslationSettings
         Provider = "azure",
         BufferSeconds = BufferSeconds is 10 or 15 ? BufferSeconds : 0,
         AzureRegion = string.IsNullOrWhiteSpace(AzureRegion) ? "global" : AzureRegion.Trim().ToLowerInvariant(),
-        Acceleration = Acceleration is "auto" or "cpu" or "cuda" ? Acceleration : "auto"
+        Acceleration = Acceleration is "auto" or "cpu" or "vulkan" ? Acceleration : "auto"
     };
     public static TranslationSettings Load(string path) => File.Exists(path)
         ? (JsonSerializer.Deserialize<TranslationSettings>(File.ReadAllBytes(path)) ?? new()).Normalize() : new();

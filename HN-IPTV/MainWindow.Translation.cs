@@ -31,11 +31,8 @@ public partial class MainWindow
             try {
                 _translationSettings=await Task.Run(()=>TranslationSettings.Load(TranslationSettingsPath));
                 RenderTranslationButtons();
-                if(!LocalTranslationRuntime.Ready&&Directory.Exists(Path.Combine(AppStorage.DataDirectory,"translation"))) {
-                    SetStatus("Updating speech recognition to Nemotron. Existing downloads are removed after validation.");
-                    await LocalTranslationRuntime.InstallAsync(_translationSettings,text=>Dispatcher.BeginInvoke(new Action(()=>SetStatus(text))),_migrationStop.Token);
-                }
-            }catch(OperationCanceledException){}catch(Exception ex){App.LogException("translation.migration",ex);SetStatus("Nemotron setup needs attention. Open Translation settings to retry; old files have been retained.");}
+
+            }catch(OperationCanceledException){}catch(Exception ex){App.LogException("translation.migration",ex);SetStatus("Whisper setup needs attention. Open Translation settings to retry; old files have been retained.");}
         };
         Activated+=(_,_)=>{if(_isFullScreen){_fullscreenControls?.Reveal();Dispatcher.BeginInvoke(DispatcherPriority.Input,new Action(()=>{if(_isFullScreen&&IsActive){Focus();System.Windows.Input.Keyboard.Focus(this);}}));}};
     }
@@ -65,7 +62,7 @@ public partial class MainWindow
     private async void TranslateSpeech_Click(object sender,RoutedEventArgs e)
     {
         bool keyReady=false;try{keyReady=!string.IsNullOrWhiteSpace(AzureTranslationCredentials.Load());}catch(Exception ex){App.LogException("translation.key",ex);}
-        if(!_translateSpeech&&(!LocalTranslationRuntime.Ready||!keyReady)){SetStatus("Prepare Nemotron and enter the Azure key in Translation settings.");TranslationSettings_Click(this,new RoutedEventArgs());return;}
+        if(!_translateSpeech&&(!LocalTranslationRuntime.Ready||!keyReady)){SetStatus("Prepare Whisper and enter the Azure key in Translation settings.");TranslationSettings_Click(this,new RoutedEventArgs());return;}
         if(!_translateSpeech) {
             var mode=new TranslationModeDialog(_translationSettings.BufferSeconds,BuildInfo.Engine=="mpv"){Owner=this};
             if(mode.ShowDialog()!=true)return;
@@ -114,16 +111,16 @@ public partial class MainWindow
 #endif
             } else {
                 _translationOverlay.SpeechPlaybackClock=null;
-                _translationOverlay.SetMessage("Preparing Nemotron; buffering app audio...",90);
+                _translationOverlay.SetMessage("Preparing Whisper; buffering app audio...",90);
                 var capture=new ProcessAudioCapture();_audioCapture=capture;await capture.StartAsync();
                 await worker.PrepareAsync(session.Token);
                 if(!_translationGeneration.IsCurrent(generation)||session.IsCancellationRequested)return;
                 var phrases=Channel.CreateBounded<PendingPhrase>(new BoundedChannelOptions(4){FullMode=BoundedChannelFullMode.DropOldest,SingleReader=true,SingleWriter=true});
                 _speechTranslation=RecognizeAudioAsync(capture,worker,phrases.Writer,settings,generation,session.Token);
                 _cloudTranslation=TranslatePhrasesAsync(phrases.Reader,azure,settings,generation,session.Token);
-                _translationOverlay.SetMessage("Nemotron → Azure ready ("+worker.Backend+").",3);
+                _translationOverlay.SetMessage("Whisper → Azure ready ("+worker.Backend+").",3);
             }
-        }catch(OperationCanceledException){}catch(Exception ex){App.LogException("translation.start",ex);_translateSpeech=false;RenderTranslationButtons();SetStatus("Translation could not start. Check Nemotron setup and the Azure key/region.");await StopTranslationResourcesAsync(restoreLive:true);}
+        }catch(OperationCanceledException){}catch(Exception ex){App.LogException("translation.start",ex);_translateSpeech=false;RenderTranslationButtons();SetStatus("Translation could not start. Check Whisper setup and the Azure key/region.");await StopTranslationResourcesAsync(restoreLive:true);}
         finally{_translationGate.Release();}
     }
     private sealed record PendingPhrase(string Text,string Source,long At,double Start=0,double End=0,double Through=0);
@@ -141,7 +138,7 @@ public partial class MainWindow
                 foreach(var result in results)foreach(string phrase in phrases.Update(result.Text,result.Final,chunk.AudioEndSeconds))
                     output.TryWrite(new(phrase,settings.InputLanguage=="auto"?TranslationSettings.NormalizeLanguage(result.Language):settings.InputLanguage,chunk.CapturedAt));
             }
-        }catch(OperationCanceledException){}catch(Exception ex){if(!ct.IsCancellationRequested){App.LogException("translation.recognition",ex);TranslationFailed("Nemotron recognition stopped. Check Translation settings.");}}
+        }catch(OperationCanceledException){}catch(Exception ex){if(!ct.IsCancellationRequested){App.LogException("translation.recognition",ex);TranslationFailed("Whisper recognition stopped. Check Translation settings.");}}
         finally{output.TryComplete();}
     }
     private async Task RecognizeBufferedAsync(BufferedTranslationSource buffered,LocalTranslationWorker worker,ChannelWriter<PendingPhrase> output,TranslationSettings settings,long generation,CancellationToken ct)
@@ -157,7 +154,7 @@ public partial class MainWindow
             Collect(await worker.FinishAsync(ct));
             if(!_translationGeneration.IsCurrent(generation)||ct.IsCancellationRequested)return;
             string paragraph=string.Join(" ",text);
-            if(paragraph.Length>0&&(!double.IsFinite(start)||end<=start))throw new IOException("Nemotron did not return usable speech timestamps.");
+            if(paragraph.Length>0&&(!double.IsFinite(start)||end<=start))throw new IOException("Whisper did not return usable speech timestamps.");
             await output.WriteAsync(new(paragraph,settings.InputLanguage=="auto"?TranslationSettings.NormalizeLanguage(language):settings.InputLanguage,System.Diagnostics.Stopwatch.GetTimestamp(),start,end,through),ct);
             await worker.ResetAsync(ct);batchStart=through;start=double.PositiveInfinity;end=0;text.Clear();
         }
