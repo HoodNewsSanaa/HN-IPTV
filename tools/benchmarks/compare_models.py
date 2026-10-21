@@ -14,11 +14,16 @@ def fetch(url,path):
     with urlopen(Request(url,headers={"User-Agent":"HN-IPTV-benchmark/1"}),timeout=120) as response,path.open("wb") as dest:shutil.copyfileobj(response,dest)
 def prepare():
     from urllib.parse import urlencode
-    rows=get("https://datasets-server.huggingface.co/rows?"+urlencode(dict(dataset="google/fleurs",config="ar_eg",split="test",offset=0,length=100)))["rows"]
+    rows=[]
+    for offset in (0,100,200,300,400):
+        page=get("https://datasets-server.huggingface.co/rows?"+urlencode(dict(dataset="google/fleurs",config="ar_eg",split="test",offset=offset,length=100)))["rows"]
+        rows.extend(page)
+        if len(page)<100:break
     selected=[];genders={}
+    print(json.dumps({"available_genders":{str(g):sum(str(x["row"].get("gender"))==str(g) for x in rows) for g in set(x["row"].get("gender") for x in rows)}}),flush=True)
     for item in rows:
         row=item["row"];gender=str(row.get("gender"))
-        if len(selected)==0: print(json.dumps({"row_keys":list(row),"num_samples":row.get("num_samples"),"gender":gender}),flush=True)
+        if genders.get(gender,0)>=3:continue
         audio=row["audio"];src=audio[0]["src"] if isinstance(audio,list) else audio["src"]
         name="ar-"+str(row["id"])+"-"+str(len(selected))+".wav";fetch(src,OUT/name)
         signal,rate=sf.read(OUT/name)
@@ -71,7 +76,7 @@ def argos():
     return w.Engine(root,"base","cpu"),root
 def save(name,rows,size,startup):
     from sacrebleu.metrics import CHRF
-    report=dict(model=name,rows=rows,startup_seconds=startup,download_bytes=size,peak_rss_mib=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024,device="cpu",threads=2,platform=platform.platform(),groups={})
+    report=dict(model=name,rows=rows,startup_seconds=startup,download_bytes=size,peak_rss_mib=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024,device="cpu",threads=2,platform=platform.platform(),cpu_info=Path("/proc/cpuinfo").read_text().split("model name",1)[-1].splitlines()[0].strip(),manifest_sha256=hashlib.sha256((OUT/"manifest.json").read_bytes()).hexdigest(),groups={})
     for condition in sorted(set(r["condition"] for r in rows)):
         group=[r for r in rows if r["condition"]==condition];times=[r["seconds"] for r in group]
         stats=dict(samples=len(group),latency_p50_seconds=statistics.median(times),latency_p95_seconds=float(np.percentile(times,95)))
@@ -121,16 +126,35 @@ def text(name):
     else:
         from huggingface_hub import snapshot_download
         from transformers import AutoTokenizer,AutoModelForSeq2SeqLM
-        repo="Helsinki-NLP/opus-mt-ar-en" if name=="opus" else "facebook/nllb-200-distilled-600M"
-        path=Path(snapshot_download(repo,allow_patterns=["*.json","*.model","*.spm","*.bin","*.safetensors"]))
-        tokenizer=AutoTokenizer.from_pretrained(path,local_files_only=True,**({"src_lang":"arb_Arab"} if name=="nllb" else {}))
-        model=AutoModelForSeq2SeqLM.from_pretrained(path,local_files_only=True).eval()
-        @torch.inference_mode()
+        repo="Helsinki-NLP/opus-mt-ar-en" if name.startswith("opus") else "facebook/nllb-200-distilled-600M"
+        from huggingface_hub import HfApi
+        files=HfApi().list_repo_files(repo)
+        weights="*.safetensors" if any(p.endswith(".safetensors") and "/" not in p for p in files) else "pytorch_model*.bin"
+        path=Path(snapshot_download(repo,allow_patterns=["*.json","*.model","*.spm",weights]))
+        tokenizer=AutoTokenizer.from_pretrained(path,local_files_only=True,**({"src_lang":"arb_Arab"} if name.startswith("nllb") else {}))
+        import ctranslate2
+        converted=OUT/(name+"-converted")
+        ctranslate2.converters.TransformersConverter(str(path)).convert(str(converted),quantization="float32",force=True)
+        model=ctranslate2.Translator(str(converted),device="cpu",compute_type="float32",inter_threads=1,intra_threads=2)
         def infer(value):
-            args=tokenizer(value,return_tensors="pt",truncation=True,max_length=256)
-            options={"forced_bos_token_id":tokenizer.convert_tokens_to_ids("eng_Latn")} if name=="nllb" else {}
-            result=model.generate(**args,**options,num_beams=3,max_new_tokens=160,no_repeat_ngram_size=3)
-            return tokenizer.batch_decode(result,skip_special_tokens=True)[0]
+            tokens=tokenizer.convert_ids_to_tokens(tokenizer.encode(value,truncation=True,max_length=256))
+            prefix=[["eng_Latn"]] if name.startswith("nllb") else None
+            result=model.translate_batch([tokens],target_prefix=prefix,beam_size=3,max_decoding_length=160,no_repeat_ngram_size=3)[0].hypotheses[0]
+            return tokenizer.decode(tokenizer.convert_tokens_to_ids(result),skip_special_tokens=True)
+        if name.startswith("opus"):
+            # Confirm the deployed tokenizer can run without Transformers.
+            import sentencepiece
+            src=sentencepiece.SentencePieceProcessor(model_file=str(path/"source.spm"))
+            dst=sentencepiece.SentencePieceProcessor(model_file=str(path/"target.spm"))
+            for sample in manifest["text"][:8]:
+                expected=infer(sample["source"])
+                raw=model.translate_batch([src.encode(sample["source"],out_type=str)+["</s>"]],beam_size=3,max_decoding_length=160,no_repeat_ngram_size=3)[0].hypotheses[0]
+                actual=dst.decode(raw)
+                if actual.strip()!=expected.strip():raise AssertionError("Standalone SentencePiece tokenizer differs: "+actual+" / "+expected)
+            for file in ("source.spm","target.spm","config.json"):
+                import shutil;shutil.copyfile(path/file,converted/file)
+            print("Standalone OPUS tokenizer parity passed.",flush=True)
+        path=converted
     startup=time.perf_counter()-start;size=sum(p.stat().st_size for p in path.rglob("*") if p.is_file())
     module().block_network();infer(manifest["text"][0]["source"]);rows=[]
     for sample in manifest["text"]:

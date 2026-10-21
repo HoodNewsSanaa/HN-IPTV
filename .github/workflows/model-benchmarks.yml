@@ -47,9 +47,6 @@ jobs:
     needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix: {model: [argos, opus, nllb]}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -58,9 +55,13 @@ jobs:
         with: {name: model-benchmark-inputs, path: benchmark-data}
       - run: pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
       - run: pip install numpy scipy soundfile huggingface_hub transformers==4.57.1 sentencepiece==0.2.1 ctranslate2 sacremoses==0.1.1 subword-nmt==0.3.8 jiwer sacrebleu
-      - run: python tools/benchmarks/compare_models.py text ${{ matrix.model }}
+      - name: Compare optimized text engines on the same runner
+        run: |
+          python tools/benchmarks/compare_models.py text argos
+          python tools/benchmarks/compare_models.py text opus-ct2
+          python tools/benchmarks/compare_models.py text nllb-ct2
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: text-model-${{ matrix.model }}
+          name: text-model-comparison
           path: benchmark-data/result-*.json
