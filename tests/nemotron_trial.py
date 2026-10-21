@@ -1,4 +1,5 @@
 """Public FLEURS fixtures only. No credentials, user audio or cloud translation."""
+import tarfile,zipfile,io
 import array,ctypes as c,hashlib,json,math,os,re,sys,time,urllib.request,wave
 from pathlib import Path
 root=Path(sys.argv[1]).resolve()
@@ -69,9 +70,19 @@ def run(samples,rate,language):
     return dict(first_partial_capture_seconds=first,inference_seconds=inference,audio_seconds=len(samples)/rate,rtf=inference/(len(samples)/rate),text=' '.join(finals),results=results)
 try:
     for config_name,language in [('en_us','en-US'),('es_419','es-ES'),('de_de','de-DE'),('ar_eg','ar-AR')]:
-        url='https://datasets-server.huggingface.co/rows?dataset=google%2Ffleurs&config='+config_name+'&split=test&offset=0&length=1'
-        row=json.load(urllib.request.urlopen(url,timeout=90))['rows'][0]['row']
-        audio=root/(config_name+'.wav');urllib.request.urlretrieve(row['audio'][0]['src'],audio)
+        metadata=zipfile.ZipFile(io.BytesIO(urllib.request.urlopen('https://huggingface.co/datasets/google/fleurs/resolve/main/data/metadata.zip',timeout=120).read()))
+        labels={}
+        for line in metadata.read('metadata/'+config_name+'/test.tsv').decode().splitlines():
+            fields=line.split('\t');labels[fields[1]]=fields[2]
+        audio=root/(config_name+'.wav')
+        with urllib.request.urlopen('https://storage.googleapis.com/xtreme_translations/FLEURS102/'+config_name+'.tar.gz',timeout=120) as response:
+            with tarfile.open(fileobj=response,mode='r|gz') as archive:
+                for member in archive:
+                    if '/test/' in member.name and member.name.endswith('.wav'):
+                        audio.write_bytes(archive.extractfile(member).read())
+                        row={'transcription':labels[Path(member.name).name]}
+                        break
+                else:raise AssertionError('No public test audio')
         with wave.open(str(audio),'rb') as wav:
             assert wav.getsampwidth()==2
             rate=wav.getframerate();channels=wav.getnchannels();raw=array.array('h',wav.readframes(wav.getnframes()))
