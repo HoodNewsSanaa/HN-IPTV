@@ -1,4 +1,4 @@
-param([switch]$FastStartup, [string]$Version = '0.12.3', [ValidateSet('vlc','mpv','mpc')][string]$Engine = 'mpv', [switch]$NoRestore)
+param([switch]$FastStartup, [string]$Version = '0.13.0', [ValidateSet('vlc','mpv','mpc')][string]$Engine = 'mpv', [switch]$NoRestore)
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must be major.minor.patch.' }
 if ($Engine -eq 'mpv') { & (Join-Path $PSScriptRoot 'prepare-mpv.ps1') }
@@ -12,6 +12,9 @@ if ($NoRestore) { $restoreArguments += '--no-restore' }
     -p:PublishSingleFile=false -p:PublishTrimmed=false "-p:PublishReadyToRun=$readyToRun" `
     "-p:Version=$Version" "-p:PlaybackEngine=$Engine" @restoreArguments -p:DebugType=none -p:DebugSymbols=false -p:CopyOutputSymbolsToPublishDirectory=false -o $publish
 if ($LASTEXITCODE -ne 0) { throw 'Windows x64 publish failed.' }
+# Publish the isolated native recognition host beside the self-contained app runtime.
+& dotnet publish (Join-Path $PSScriptRoot 'HN-IPTV.SpeechWorker/HN-IPTV.SpeechWorker.csproj') -c Release -r win-x64 --self-contained true -p:DebugType=none -p:DebugSymbols=false -o $publish
+if ($LASTEXITCODE -ne 0) { throw 'Speech worker publish failed.' }
 # Incremental referenced-project builds may leave symbols from an earlier test
 # configuration. Symbols are retained in build outputs, never release payloads.
 Get-ChildItem $publish -Recurse -File -Filter '*.pdb' | Remove-Item -Force

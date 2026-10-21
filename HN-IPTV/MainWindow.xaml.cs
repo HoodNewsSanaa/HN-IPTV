@@ -1061,7 +1061,7 @@ public partial class MainWindow : Window
                 () => _ = TuneSelectedAsync(true), () => Pause_Click(this, new RoutedEventArgs()),
                 () => Stop_Click(this, new RoutedEventArgs()), ToggleMute, () => _ = ToggleCaptionsAsync(),
                 ToggleFullscreen, value => VolumeSlider.Value = value, (int)VolumeSlider.Value,
-                () => TranslateSpeech_Click(this, new RoutedEventArgs()), () => TranslateScreen_Click(this, new RoutedEventArgs()));
+                () => TranslateSpeech_Click(this, new RoutedEventArgs()), null);
             _fullscreenControls.Reveal();
         }
         else

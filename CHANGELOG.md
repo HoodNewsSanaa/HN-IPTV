@@ -1,3 +1,13 @@
+# 0.13.0 Feature Rich preview
+
+- Replace the local language stack with Nemotron 3.5 ASR Streaming Q8 → Azure Translator → timed captions.
+- Use one 742 MB multilingual model and a native Windows recognition host. Remove Python, Whisper, Argos/OPUS and EasyOCR from the build.
+- Submit fresh audio about every 320 ms, retain native streaming context, and keep recognition running while Azure translates earlier stable phrases.
+- Preserve automatic/manual languages, encrypted Azure credentials, toggle colors, compact captions and fullscreen toolbar avoidance.
+- Validate the replacement before deleting old app-owned language downloads and private CUDA libraries. Refuse linked cleanup targets; preserve playlists, settings and keys.
+- Retire screen OCR translation; channel CC remains available.
+- Checksum-pin the model and CPU/CUDA runtime archives; validate native speech, reset, silence, migration and Windows upgrades.
+
 # 0.12.3 Feature Rich preview
 
 - Buffer app audio while recognition warms up, prepare speech before screen OCR, and begin speech processing as soon as its model is ready.

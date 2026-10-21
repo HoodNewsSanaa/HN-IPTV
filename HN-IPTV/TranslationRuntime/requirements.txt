@@ -1,6 +1,0 @@
-faster-whisper==1.2.1
-easyocr==1.7.2
-sentencepiece==0.2.1
-langdetect==1.0.9
-sacremoses==0.1.1
-subword-nmt==0.3.8

@@ -1,0 +1,89 @@
+{
+  "model": "nvidia/nemotron-3.5-asr-streaming-0.6b",
+  "format": "Q8_0 GGUF",
+  "runtime": "NVIDIA/NeMo-Speech.cpp v0.2.0",
+  "backend": "Windows GitHub hosted CPU",
+  "source_run": "https://github.com/HoodNewsSanaa/HN-IPTV/actions/runs/39617019347",
+  "samples": [
+    {
+      "fixture": "en_us",
+      "language": "en-US",
+      "rtf": 0.46880977346277025,
+      "wer": 0.26666666666666666,
+      "first_partial_capture_seconds": 1.6,
+      "audio_seconds": 6.18,
+      "text": "today the only insects that cannot fold back their wings are dragonflies and may flies ",
+      "reference": "Today, the only insects that cannot fold back their wings are dragon flies and mayflies."
+    },
+    {
+      "fixture": "en_us",
+      "language": "auto",
+      "rtf": 0.41839203883497356,
+      "wer": 0.26666666666666666,
+      "first_partial_capture_seconds": 1.6,
+      "audio_seconds": 6.18,
+      "text": "today the only insects that cannot fold back their wings are dragonflies and may flies ",
+      "reference": "Today, the only insects that cannot fold back their wings are dragon flies and mayflies."
+    },
+    {
+      "fixture": "es_419",
+      "language": "es-ES",
+      "rtf": 0.4230145353159681,
+      "wer": 0.024390243902439025,
+      "first_partial_capture_seconds": 1.92,
+      "audio_seconds": 16.14,
+      "text": "coincidimos con la declaración de la usoc de que los intereses de los atletas los clubes y sus deportes pueden ser atendidos más apropiadamente si se avanza con cambios significativos dentro de nuestra organización en lugar del retiro de la certificaciones ",
+      "reference": "Coincidimos con la declaración de la USOC de que los intereses de los atletas, los clubes y sus deportes, pueden ser atendidos más apropiadamente si se avanza con cambios significativos dentro de nuestra organización, en lugar del retiro de las certificaciones."
+    },
+    {
+      "fixture": "es_419",
+      "language": "auto",
+      "rtf": 0.4238618587360593,
+      "wer": 0.024390243902439025,
+      "first_partial_capture_seconds": 1.92,
+      "audio_seconds": 16.14,
+      "text": "coincidimos con la declaración de la usoc de que los intereses de los atletas los clubes y sus deportes pueden ser atendidos más apropiadamente si se avanza con cambios significativos dentro de nuestra organización en lugar del retiro de la certificaciones ",
+      "reference": "Coincidimos con la declaración de la USOC de que los intereses de los atletas, los clubes y sus deportes, pueden ser atendidos más apropiadamente si se avanza con cambios significativos dentro de nuestra organización, en lugar del retiro de las certificaciones."
+    },
+    {
+      "fixture": "de_de",
+      "language": "de-DE",
+      "rtf": 0.41242895833332704,
+      "wer": 0.3,
+      "first_partial_capture_seconds": 2.24,
+      "audio_seconds": 4.8,
+      "text": "hollando mendoza schoss mit seinem m sechzehn gewehr auf die touristen",
+      "reference": "Rolando Mendoza schoss mit seinem M16-Gewehr auf die Touristen."
+    },
+    {
+      "fixture": "de_de",
+      "language": "auto",
+      "rtf": 0.41122485416669485,
+      "wer": 0.3,
+      "first_partial_capture_seconds": 2.24,
+      "audio_seconds": 4.8,
+      "text": "hollando mendoza schoss mit seinem m sechzehn gewehr auf die touristen",
+      "reference": "Rolando Mendoza schoss mit seinem M16-Gewehr auf die Touristen."
+    },
+    {
+      "fixture": "ar_eg",
+      "language": "ar-AR",
+      "rtf": 0.42768709227468227,
+      "wer": 0.1,
+      "first_partial_capture_seconds": 0.96,
+      "audio_seconds": 9.32,
+      "text": "أعيد بناء معظم المباني الموجودة على حواف المجمع من أجل إعطاء السياح فكرة أفضل عن كيفية ظهورها في الأصل",
+      "reference": "أُعيد بناء معظم المباني الموجودة على حواف المجمع من أجل إعطاء السياح فكرة أفضل عن كيفية ظهورها في الأصل."
+    },
+    {
+      "fixture": "ar_eg",
+      "language": "auto",
+      "rtf": 0.4234051180257586,
+      "wer": 0.1,
+      "first_partial_capture_seconds": 0.96,
+      "audio_seconds": 9.32,
+      "text": "أعيد بناء معظم المباني الموجودة على حواف المجمع من أجل إعطاء السياح فكرة أفضل عن كيفية ظهورها في الأصل",
+      "reference": "أُعيد بناء معظم المباني الموجودة على حواف المجمع من أجل إعطاء السياح فكرة أفضل عن كيفية ظهورها في الأصل."
+    }
+  ]
+}

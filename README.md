@@ -1,6 +1,6 @@
-# HN-IPTV 0.12.3 — Feature Rich preview
+# HN-IPTV 0.13.0 — Feature Rich preview
 
-See [FEATURE-RICH.md](FEATURE-RICH.md) for local translation setup, fullscreen fixes and installable branch artifacts. The installer upgrades an existing stable copy in place and preserves saved data.
+See [FEATURE-RICH.md](FEATURE-RICH.md) for Nemotron/Azure translation setup, fullscreen fixes and installable branch artifacts. The installer upgrades an existing stable copy in place and preserves saved data.
 
 A Windows x64 IPTV player built with C#/.NET 10, WPF and mpv.
 

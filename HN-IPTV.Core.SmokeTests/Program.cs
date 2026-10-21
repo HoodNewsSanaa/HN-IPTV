@@ -332,13 +332,11 @@ var previewJson = updateJson.Replace("v0.10.0", "feature-rich-v0.10.0")
 Check(GitHubUpdates.Parse(previewJson, new Version(0,9,2), false, true) != null, "feature update channel accepts its own previews");
 Check(GitHubUpdates.Parse(previewJson, new Version(0,9,2), false) == null, "stable update channel excludes previews");
 Check(GitHubUpdates.Parse(updateJson, new Version(0,9,2), false, true) == null, "feature update channel does not switch to stable builds");
-var translationSettings = new HnIptv.Translation.TranslationSettings { InputLanguage = "JA-jp", OutputLanguage = "es", SpeechModel = "invalid", Acceleration = "invalid" }.Normalize();
-Check(translationSettings.InputLanguage == "ja" && translationSettings.Target == "es" && translationSettings.SpeechModel == "auto", "translation language/model normalization");
+var translationSettings = new HnIptv.Translation.TranslationSettings { InputLanguage = "JA-jp", OutputLanguage = "es", Acceleration = "invalid" }.Normalize();
+Check(translationSettings.InputLanguage == "ja" && translationSettings.Target == "es", "translation language/model normalization");
 Check(translationSettings.Acceleration == "auto", "invalid acceleration falls back to auto");
-var gpuSettings = (translationSettings with { SpeechModel = "medium", Acceleration = "cuda" }).Normalize();
-Check(gpuSettings.SpeechModel == "medium" && gpuSettings.Acceleration == "cuda", "medium GPU translation settings remain selectable");
-var automaticTranslation = new HnIptv.Translation.TranslationSettings { SpeechModel = "turbo", SpeechPipeline = "staged", TextModel = "auto", NoiseSuppression = true }.Normalize();
-Check(automaticTranslation.SpeechModel == "turbo" && automaticTranslation.SpeechPipeline == "staged" && automaticTranslation.NoiseSuppression, "separate speech translation and optional noise settings persist");
+var gpuSettings = (translationSettings with { Acceleration = "cuda" }).Normalize();
+Check(gpuSettings.Acceleration == "cuda", "medium GPU translation settings remain selectable");
 var translationVersion = new HnIptv.Translation.TranslationGeneration();
 long firstTranslation = translationVersion.Current;
 translationVersion.Advance();
@@ -355,24 +353,22 @@ Check(captionHistory.Append("") == "Hello world.", "empty inference preserves re
 Check(captionHistory.Append("World! Here is the news.") == "Hello world. Here is the news.", "caption overlap retains context");
 captionHistory.Clear(); Check(captionHistory.Append("New channel") == "New channel", "channel reset clears caption history");
 var segmenter = new HnIptv.Translation.SpeechAudioBuffer();
-byte[] voicedPacket = new byte[HnIptv.Translation.SpeechAudioBuffer.BytesPerSecond / 10];
-for (int i = 0; i < voicedPacket.Length; i += 2) { voicedPacket[i] = 0; voicedPacket[i + 1] = 10; }
-byte[]? speechSegment = null;
-for (int i = 0; i < 15; i++) speechSegment = segmenter.Append(voicedPacket);
-Check(speechSegment?.Length == HnIptv.Translation.SpeechAudioBuffer.BytesPerSecond * 3 / 2, "continuous speech is emitted within 1.5 seconds");
-for (int i = 0; i < 8; i++) segmenter.Append(voicedPacket);
-byte[] silence = new byte[voicedPacket.Length];
-for (int i = 0; i < 2; i++) speechSegment = segmenter.Append(silence);
-Check(speechSegment != null && speechSegment.Length >= HnIptv.Translation.SpeechAudioBuffer.BytesPerSecond * 2, "phrase segmentation carries overlap across a pause");
-var rollingAudio = new HnIptv.Translation.SpeechAudioBuffer();
-int rollingEmissions = 0;
-for (int packet = 0; packet < 240; packet++)
-    if (rollingAudio.Append(voicedPacket) is { } rollingSegment) {
-        rollingEmissions++;
-        Check(rollingSegment.Length <= HnIptv.Translation.SpeechAudioBuffer.BytesPerSecond * 15, "rolling audio memory stays bounded");
-        if (rollingEmissions > 1) Check(rollingAudio.LastContextSeconds >= 1.5, "recognition retains sentence context");
-    }
-Check(rollingEmissions == 16, "continuous rolling captions refresh every 1.5 seconds");
+byte[] packet = new byte[HnIptv.Translation.SpeechAudioBuffer.BytesPerSecond / 100];
+int emitted=0;long emittedBytes=0;
+for(int i=0;i<320;i++) if(segmenter.Append(packet) is {} chunk) {
+    emitted++;emittedBytes+=chunk.Length;
+    Check(chunk.Length==packet.Length*32,"320 ms packets have no overlap");
+    Check(segmenter.LastContextSeconds==0,"streaming context stays in native model");
+}
+Check(emitted==10 && emittedBytes==packet.Length*320,"each captured sample is submitted exactly once");
+var streamingPhrases=new HnIptv.Translation.StreamingPhrases();
+Check(streamingPhrases.Update("The news starts today.",false,1).Count==0,"first partial stays hidden");
+Check(streamingPhrases.Update("The news starts today. More",false,1.32).Single()=="The news starts today.","stable phrase dispatches");
+Check(streamingPhrases.Update("The news starts today.",true,2).Count==0,"final does not duplicate stable phrase");
+Check(streamingPhrases.Update("Next channel.",true,3).Single()=="Next channel.","new native utterance resets prefix");
+streamingPhrases.Clear();
+Check(streamingPhrases.Update("Different stream",true,4).Single()=="Different stream","channel reset drops old state");
+Check(HnIptv.Translation.StreamingPhrases.Cues(new string('a',60)+" "+new string('b',60)).Count==2,"compact timed output");
 var screenViewport = HnIptv.Translation.ScreenOverlayLayout.Viewport(1280, 960, 16d / 9);
 Check(Math.Abs(screenViewport.Y - 120) < 0.001 && Math.Abs(screenViewport.Height - 720) < 0.001, "overlay respects letterboxing");
 var translatedRegion = new HnIptv.Translation.ScreenTranslationRegion(0.1, 0.8, 0.4, 0.1, "Translated headline");
@@ -388,7 +384,6 @@ Check(firstRegion.Id == jitteredRegion.Id && jitteredRegion.Region.X < 0.105, "o
 Check(regionTracker.Update(Array.Empty<HnIptv.Translation.ScreenTranslationRegion>()).Count == 1, "single missed OCR frame does not flash");
 Check(regionTracker.Update(Array.Empty<HnIptv.Translation.ScreenTranslationRegion>()).Count == 0, "stale translated boxes disappear");
 regionTracker.Clear();
-Check(HnIptv.Translation.TranslationSettings.Load(translationFile+"-missing-overlay-test").ScreenOverlay == "positioned", "new screen overlay default");
 Console.WriteLine("Translation settings, caption continuity, phrase segmentation, positioned overlays and stale-result cancellation checks passed.");
 
 await AzureTranslationChecks.RunAsync();

@@ -11,7 +11,7 @@ internal sealed record CapturedAudio(byte[] Wave, long CapturedAt, double Contex
 internal sealed class ProcessAudioCapture : IAsyncDisposable
 {
     private readonly CancellationTokenSource _stop = new();
-    private readonly Channel<CapturedAudio> _chunks = Channel.CreateBounded<CapturedAudio>(new BoundedChannelOptions(1) {
+    private readonly Channel<CapturedAudio> _chunks = Channel.CreateBounded<CapturedAudio>(new BoundedChannelOptions(8) {
         FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true, SingleWriter = true });
     private Task _capture = Task.CompletedTask;
     internal ChannelReader<CapturedAudio> Chunks => _chunks.Reader;
@@ -60,7 +60,7 @@ internal sealed class ProcessAudioCapture : IAsyncDisposable
                         var bytes = new byte[size];
                         if ((flags & 2) == 0 && data != IntPtr.Zero) Marshal.Copy(data, bytes, 0, size);
                         var segment = samples.Append(bytes);
-                        if (segment != null) _chunks.Writer.TryWrite(new CapturedAudio(ToWave(segment), System.Diagnostics.Stopwatch.GetTimestamp(), samples.LastContextSeconds, samples.AudioEndSeconds));
+                        if (segment != null) _chunks.Writer.TryWrite(new CapturedAudio(segment, System.Diagnostics.Stopwatch.GetTimestamp(), samples.LastContextSeconds, samples.AudioEndSeconds));
                     }
                     finally { capture.ReleaseBuffer(frames); }
                     capture.GetNextPacketSize(out frames);

@@ -7,15 +7,9 @@ public sealed record TranslationSettings
 {
     public string InputLanguage { get; init; } = "auto";
     public string OutputLanguage { get; init; } = "auto";
-    public string SpeechModel { get; init; } = "auto";
     public string Acceleration { get; init; } = "auto";
-    public string Provider { get; init; } = "local";
+    public string Provider { get; init; } = "azure";
     public string AzureRegion { get; init; } = "global";
-    public string TextModel { get; init; } = "auto";
-    public string SpeechPipeline { get; init; } = "auto";
-    public bool NoiseSuppression { get; init; }
-    public string ScreenOverlay { get; init; } = "positioned";
-    public string[] InstalledInputs { get; init; } = ["en", "es", "fr", "de", "pt", "it"];
     public string Target => OutputLanguage == "auto" ? NormalizeLanguage(CultureInfo.CurrentUICulture.TwoLetterISOLanguageName) : NormalizeLanguage(OutputLanguage);
     public static string NormalizeLanguage(string? value)
     {
@@ -24,14 +18,9 @@ public sealed record TranslationSettings
     }
     public TranslationSettings Normalize() => this with {
         InputLanguage = NormalizeLanguage(InputLanguage), OutputLanguage = NormalizeLanguage(OutputLanguage),
-        SpeechModel = SpeechModel is "auto" or "tiny" or "base" or "small" or "medium" or "turbo" ? SpeechModel : "auto",
-        Provider = Provider is "local" or "azure" ? Provider : "local",
+        Provider = "azure",
         AzureRegion = string.IsNullOrWhiteSpace(AzureRegion) ? "global" : AzureRegion.Trim().ToLowerInvariant(),
-        TextModel = TextModel is "auto" or "argos" ? TextModel : "auto",
-        SpeechPipeline = SpeechPipeline is "auto" or "direct" or "staged" ? SpeechPipeline : "auto",
-        Acceleration = Acceleration is "auto" or "cpu" or "cuda" ? Acceleration : "auto",
-        ScreenOverlay = ScreenOverlay is "positioned" or "captions" ? ScreenOverlay : "positioned",
-        InstalledInputs = (InstalledInputs ?? []).Select(NormalizeLanguage).Where(x => x != "auto").Distinct().Take(30).ToArray()
+        Acceleration = Acceleration is "auto" or "cpu" or "cuda" ? Acceleration : "auto"
     };
     public static TranslationSettings Load(string path) => File.Exists(path)
         ? (JsonSerializer.Deserialize<TranslationSettings>(File.ReadAllBytes(path)) ?? new()).Normalize() : new();

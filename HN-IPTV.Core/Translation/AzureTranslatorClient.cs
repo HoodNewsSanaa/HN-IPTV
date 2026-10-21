@@ -49,7 +49,7 @@ public sealed class AzureTranslatorClient
             if (_cache.TryGetValue(cacheKey,out var cached)) return cached;
             if (_blocked != null) throw new InvalidOperationException(_blocked);
             if (DateTimeOffset.UtcNow < _retryAt)
-                throw new InvalidOperationException("Azure is rate limited. Waiting before another request; Local translation remains available.");
+                throw new InvalidOperationException("Azure is rate limited. Waiting before another request.");
             var url = Endpoint+"/translate?api-version=3.0&to="+Uri.EscapeDataString(Language(target));
             if (source != "auto") url += "&from="+Uri.EscapeDataString(Language(source));
             using var request = new HttpRequestMessage(HttpMethod.Post,url);
@@ -59,10 +59,10 @@ public sealed class AzureTranslatorClient
             HttpResponseMessage response;
             try { response = await _http.SendAsync(request,ct); }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested) {
-                throw new InvalidOperationException("Azure translation timed out. Check your connection or choose Local.");
+                throw new InvalidOperationException("Azure translation timed out. Check your connection.");
             }
             catch (HttpRequestException) {
-                throw new InvalidOperationException("Could not connect to Azure Translator. Check your connection or choose Local.");
+                throw new InvalidOperationException("Could not connect to Azure Translator. Check your connection.");
             }
             using (response) {
                 if (!response.IsSuccessStatusCode) {
@@ -71,7 +71,7 @@ public sealed class AzureTranslatorClient
                         HttpStatusCode.Forbidden => "Azure access was denied or the quota is exhausted. Check the resource, region and Azure usage.",
                         HttpStatusCode.TooManyRequests => "Azure translation is rate limited. Waiting before another request.",
                         HttpStatusCode.BadRequest => "Azure rejected this language pair or request. Check the input and output languages.",
-                        _ => "Azure Translator is unavailable (HTTP "+(int)response.StatusCode+"). Choose Local or try again later."
+                        _ => "Azure Translator is unavailable (HTTP "+(int)response.StatusCode+"). Try again later."
                     };
                     if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden) _blocked = error;
                     if (response.StatusCode == HttpStatusCode.TooManyRequests)

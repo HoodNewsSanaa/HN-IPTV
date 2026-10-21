@@ -1,7 +1,7 @@
 param([Parameter(Mandatory)][string]$PublishDirectory, [ValidateSet('vlc','mpv','mpc')][string]$Engine = 'mpv')
 $ErrorActionPreference = 'Stop'
 $required = @('HN-IPTV.exe','HN-IPTV.dll','HN-IPTV.Core.dll','HN-IPTV.deps.json','HN-IPTV.runtimeconfig.json',
-    'coreclr.dll','hostfxr.dll','PresentationFramework.dll','build-manifest.json')
+    'HN-IPTV.SpeechWorker.exe','HN-IPTV.SpeechWorker.dll','HN-IPTV.SpeechWorker.runtimeconfig.json','coreclr.dll','hostfxr.dll','PresentationFramework.dll','build-manifest.json')
 if ($Engine -eq 'vlc') {
     $required += @('LibVLCSharp.dll',
     'libvlc/win-x64/libvlc.dll','libvlc/win-x64/libvlccore.dll',
@@ -48,3 +48,5 @@ foreach ($file in Get-ChildItem $PublishDirectory -Recurse -File | Where-Object 
     } finally { $reader.Dispose(); $stream.Dispose() }
 }
 Write-Host 'Publish dependencies, architectures, and absence of user data verified.'
+
+if (Test-Path (Join-Path $PublishDirectory 'TranslationRuntime')) { throw 'Package contains the retired Python language stack.' }

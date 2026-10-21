@@ -1,64 +1,47 @@
 name: Feature Rich local translation
 on:
   push:
-    branches: [HN-IPTV-Feature-Rich]
+    branches: [HN-IPTV-Feature-Rich, HN-IPTV-Nemotron-Trial]
   pull_request:
-    paths:
-      - 'HN-IPTV/TranslationRuntime/**'
-      - 'tests/*translation*'
-      - 'tests/test_speech_cues.py'
-      - '.github/workflows/feature-translation.yml'
+    paths: ['HN-IPTV.SpeechWorker/**', 'HN-IPTV/Translation/**', 'HN-IPTV.Core/Translation/**', 'tests/TranslationRuntimeHarness/**']
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: local-translation-${{ github.ref }}
+  group: native-translation-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   offline-models:
     runs-on: windows-latest
-    timeout-minutes: 50
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Worker unit regressions
-        run: python -m unittest discover -s tests -p test_translation_worker.py -v
-      - name: Timed caption stability regressions
-        run: python -m unittest discover -s tests -p test_speech_cues.py -v
-      - name: Publish feature application for setup validation
+      - name: Core, streaming phrase and simulated Azure regressions
+        run: dotnet run --project HN-IPTV.Core.SmokeTests -c Release
+      - name: Publish application and isolated recognition host
         shell: pwsh
         run: ./build-windows.ps1
       - uses: actions/cache@v4
         with:
-          path: artifacts/local-runtime-data
-          key: feature-private-runtime-tiny-en-es-ar-opus-v3
-          restore-keys: feature-private-runtime-tiny-en-es-
-      - name: Run the actual in-app private runtime and model setup
-        run: dotnet run --project tests/TranslationRuntimeHarness -c Release -- artifacts/publish/HN-IPTV.dll artifacts/local-runtime-data artifacts/runtime-paths.json
-      - name: Generate spoken-English fixture
+          path: artifacts/nemotron-runtime-data
+          key: native-nemotron-q8-0.2.0-v1
+      - name: Generate speech fixture
         shell: powershell
         run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
           Add-Type -AssemblyName System.Speech
           $voice = New-Object System.Speech.Synthesis.SpeechSynthesizer
-          $voice.SetOutputToWaveFile((Join-Path $PWD 'artifacts/spoken.wav'))
-          $voice.Speak('Hello world. This is a local translation test.')
+          $format = New-Object System.Speech.AudioFormat.SpeechAudioFormatInfo(44100, [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen, [System.Speech.AudioFormat.AudioChannel]::Mono)
+          $voice.SetOutputToWaveFile((Join-Path $PWD 'artifacts/spoken.wav'), $format)
+          $voice.Speak('Hello world. This is a streaming speech recognition test.')
           $voice.Dispose()
-      - name: Verify real speech and screen translation with networking disabled
-        shell: pwsh
-        run: |
-          $runtime = Get-Content artifacts/runtime-paths.json -Raw | ConvertFrom-Json
-          & $runtime.python tests/translation_integration.py --models $runtime.models --audio artifacts/spoken.wav --report artifacts/translation-integration.json
-          if ($LASTEXITCODE -ne 0) { throw 'Offline inference integration failed.' }
+      - name: Actual native speech, reset, silence and safe migration
+        run: dotnet run --project tests/TranslationRuntimeHarness -c Release -- artifacts/publish/HN-IPTV.dll artifacts/nemotron-runtime-data artifacts/native-runtime.json artifacts/spoken.wav
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: HN-IPTV-Feature-Rich-translation-validation
-          path: |
-            artifacts/runtime-paths.json
-            artifacts/translation-integration.json
-          if-no-files-found: warn
+          name: native-translation-validation
+          path: artifacts/native-runtime.json

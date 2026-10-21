@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.12.3"
+  #define AppVersion "0.13.0"
 #endif
 #ifndef PlaybackEngine
   #define PlaybackEngine "mpv"
@@ -40,6 +40,8 @@ VersionInfoDescription=HN-IPTV Windows installer
 Source: "..\artifacts\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [InstallDelete]
+; Retire the installed Python worker; downloaded legacy data is removed after native model validation.
+Type: filesandordirs; Name: "{app}\TranslationRuntime"
 #if PlaybackEngine == "mpv"
 Type: filesandordirs; Name: "{app}\libvlc"
 Type: files; Name: "{app}\LibVLCSharp.dll"
