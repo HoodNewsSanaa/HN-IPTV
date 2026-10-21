@@ -8,6 +8,9 @@ internal sealed class NativeRecognizer : IDisposable
     private readonly WhisperProcessor _processor;
     private readonly List<float> _audio=[];
     private readonly bool _buffered;
+    private readonly WhisperVadFactory _vadFactory;
+    private readonly WhisperVadProcessor _vad;
+    private double _lastVad,_lastDecode;
     private double _offset;
     internal sealed record Recognition(string Text,string Language,bool Final,double StartSeconds,double EndSeconds);
     internal NativeRecognizer(string directory,string modelPath,string language,bool gpu,int bufferSeconds)
@@ -20,27 +23,46 @@ internal sealed class NativeRecognizer : IDisposable
                 .WithNoContext().WithTemperature(0).WithTemperatureInc(0)
                 .WithNoSpeechThreshold(.6f).WithProbabilities().Build();
         }catch{_factory.Dispose();throw;}
+        try {
+            _vadFactory=WhisperVadFactory.FromPath(Path.Combine(Path.GetDirectoryName(modelPath)!,"ggml-silero-v6.2.0.bin"));
+            _vad=_vadFactory.CreateBuilder().WithUseGpu(false).WithThreads(1).WithThreshold(.5f)
+                .WithMinSilenceDuration(TimeSpan.FromMilliseconds(550)).WithSpeechPadding(TimeSpan.FromMilliseconds(80)).Build();
+        }catch{_processor.Dispose();_factory.Dispose();throw;}
         _buffered=bufferSeconds>0;
     }
-    internal void Reset(){_audio.Clear();_offset=0;}
+    internal void Reset(){_audio.Clear();_offset=0;_lastVad=_lastDecode=0;_vad.ResetState();}
     internal async Task<List<Recognition>> Push(float[] samples,int rate,bool finish=false)
     {
         if(rate!=44100)throw new InvalidDataException("Unexpected sample rate.");
         _audio.AddRange(samples);
         if(_audio.Count>44100*20)throw new InvalidDataException("Speech context exceeds limit.");
-        if(!finish&&(_buffered||_audio.Count<44100*5))return [];
-        var input=_audio.ToArray();_audio.Clear();double duration=input.Length/44100d,offset=_offset;_offset+=duration;
-        if(input.Length<4410)return [];
+        double duration=_audio.Count/44100d;
+        float[]? mono=null;
+        if(!finish) {
+            if(!_buffered&&duration<5)return [];
+            if(_buffered) {
+                if(duration<4||duration-_lastVad<.64)return [];
+                _lastVad=duration;mono=Resample(_audio.ToArray());
+                var speech=_vad.DetectSpeech(mono);
+                double lastEnd=speech.Count==0?duration:speech[^1].End.TotalSeconds;
+                if(!HnIptv.Translation.SpeechBoundary.ShouldDecode(duration,lastEnd,_lastDecode))return [];
+                _lastDecode=duration;
+            }
+        }
+        var input=_audio.ToArray();double offset=_offset;
+        if(input.Length<4410){if(finish){_audio.Clear();_offset+=duration;}return [];}
         double energy=0;foreach(float sample in input)energy+=sample*sample;
-        // Avoid decoding digital silence; Whisper's own no-speech probability handles other non-speech audio.
-        if(Math.Sqrt(energy/input.Length)<.001)return [];
-        float[] mono=Resample(input);var result=new List<Recognition>();
+        if(Math.Sqrt(energy/input.Length)<.001){_audio.Clear();_offset+=duration;return [];}
+        mono??=Resample(input);var result=new List<Recognition>();
         await foreach(var segment in _processor.ProcessAsync(mono)) {
             string text=segment.Text.Trim();
             if(!text.Any(char.IsLetterOrDigit)||segment.NoSpeechProbability>=.6f||segment.Probability<.15f)continue;
             double start=Math.Clamp(segment.Start.TotalSeconds,0,duration),end=Math.Clamp(segment.End.TotalSeconds,0,duration);
             if(end>start)result.Add(new(text,segment.Language,true,offset+start,offset+end));
         }
+        // Keep unfinished text private and retain its audio for one longer decode. Only final text reaches Azure.
+        if(_buffered&&!finish&&(result.Count==0||!HnIptv.Translation.SpeechBoundary.EndsSentence(result[^1].Text)))return [];
+        _audio.Clear();_offset+=duration;_lastVad=_lastDecode=0;
         return result;
     }
     // Band-limited conversion to Whisper's 16 kHz input. Resample the complete batch so chunk boundaries stay continuous.
@@ -60,5 +82,5 @@ internal sealed class NativeRecognizer : IDisposable
         }
         return output;
     }
-    public void Dispose(){_processor.Dispose();_factory.Dispose();}
+    public void Dispose(){_vad.Dispose();_vadFactory.Dispose();_processor.Dispose();_factory.Dispose();}
 }

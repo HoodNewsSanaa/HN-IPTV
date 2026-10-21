@@ -8,46 +8,16 @@ Whisper generates punctuation using audio context. Azure receives the recognized
 
 Existing Nemotron files are retained so installing the previous release can reuse them. New model setup happens from Translation settings and does not automatically download at boot. Existing Azure credentials, playlists and the FFmpeg transport are reused.
 
-# HN-IPTV Feature Rich preview — 0.13.1
+## Buffered playback
 
-Branch: `HN-IPTV-Feature-Rich`.
+Click Translate speech and select Live, Generous time — 10 seconds, or Generous time — 15 seconds (recommended). The timing choice is also available in settings. Speech blocks end adaptively at a detected pause followed by Whisper sentence punctuation, starting after four seconds. Unfinished text waits for more context. The 10-second mode caps batches at eight seconds; the 15-second mode caps them at twelve seconds. A 0.9 MB local Silero speech detector supplies pause detection. Sentence endings are heuristic; paragraph/idea completeness cannot be guaranteed. Live mode uses five-second recognition batches and does not delay the video.
 
-## Translation
+The mpv build extracts audio ahead of playback from one incoming feed. It releases original audio/video together only after the selected lead time and completed translation. Azure failures stop translation and return to live playback. Azure requires Internet access, and recognized text counts toward your Azure quota.
 
-The pipeline is **the previous Nemotron engine 3.5 ASR Streaming Q8 → Azure Translator → timed captions**.
+The optional FFmpeg 9.0.2 media transport downloads once (115 MB compressed). It copies original video/audio codecs into a local rolling playlist. Temporary media is limited to 512 MB per session; stop, channel changes and disabling translation clean it. Abandoned owned sessions are cleaned on next buffered use. A long pause can outlive the rolling window and require rebuilding the buffer. Captions follow the paused media clock and rise above fullscreen controls.
 
-Recognition uses one multilingual local model (741,548,352 bytes), with automatic or manual input language. Output Auto uses the Windows display language. Language coverage and accuracy vary; some languages are experimental. Azure translates recognized text only; audio stays on this PC.
+## Installation
 
-Open Translation settings to prepare the previous Nemotron engine, choose Auto/CUDA/CPU, and paste the Azure Translator key and region in the Azure tab. Existing encrypted Azure credentials are preserved. Azure requires Internet access and consumes your resource's text-translation quota. Cloud response time and phrase context still contribute to caption delay.
+Run HN-IPTV-Setup.exe over the existing installation; do not uninstall first. App identity, playlists, preferences and encrypted Azure credentials are preserved. Downloaded Whisper data is stored under speech-whisper within the app data directory; portable installations use their own data directory.
 
-The native Windows runtime replaces Python, PyTorch, Whisper, Argos, OPUS and EasyOCR. CPU runtime download is about 5.5 MB; optional CUDA runtime about 102 MB. The model downloads separately once. Driver compatibility is checked by actual inference, with native CPU fallback for Auto. This build does not require the old multi-gigabyte PyTorch CUDA installation.
-
-Fresh audio is sent about every 320 ms. The native stream retains acoustic context, so old audio is not repeatedly decoded. Recognition and Azure translation run independently with bounded queues. Stable phrases become compact pop-on cues; unfinished trailing word fragments are withheld. Captions still rise above fullscreen controls.
-
-Screen-text OCR translation has been retired as part of removing the old local language stack. Channel-provided CC remains available.
-
-## Generous time
-
-Click Translate speech and choose Live, Generous time — 10 seconds, or Generous time — 15 seconds (recommended). The choice is also in Translation settings.
-
-Generous time uses one incoming media feed. It extracts recognition audio ahead of playback, translates groups of roughly 6–12 seconds, preferring completed utterances through Azure, and delays original video and audio together. Captions use the previous Nemotron engine's source word timestamps and the player's media clock. Translated paragraphs are split into compact cues proportionally across their source speech interval; this is phrase-level synchronization, not exact translated-word alignment.
-
-The 10-second option caps groups at eight seconds to leave processing headroom. The 15-second option permits up to 12 seconds of context.
-
-The rolling playlist exposes media only after its lead time and completed translation. If processing falls behind, playback waits/refills rather than showing late captions. Source/network latency, segment boundaries and translation delays can make the actual delay longer than the selected 10 or 15 seconds. Azure failures stop buffered translation and return to live playback with an error.
-
-The optional FFmpeg 9.0.2 media transport downloads once (115 MB compressed), separately from the installer and language model. It copies original video/audio codecs into short local segments and decodes a separate audio output for recognition. It does not add another language model. mpv builds support this mode; Live remains available in comparison builds.
-
-Temporary media is limited to 512 MB per session and a bounded rolling window. Stop, channel changes and disabling translation remove session files. Known abandoned sessions are removed on next buffered use. A long pause can outlive the rolling window and require rebuilding the buffer. Captions follow the paused media clock and avoid the fullscreen controls.
-
-## Upgrade and cleanup
-
-Run HN-IPTV-Setup.exe over the existing installation. Do not uninstall first. App identity, playlists, preferences and Azure credentials are preserved.
-
-When old language downloads exist, first launch prepares the replacement. Old downloads are deleted **only after** the checksum-verified the previous Nemotron engine model completes real native inference. The cleanup targets only the app-owned `translation` directory, including its private Python, recognition/OCR/translation models, caches and PyTorch CUDA libraries. It refuses linked directories. If setup fails, old data is retained and Translation settings can retry. Files locked by another app instance require closing it and retrying setup.
-
-The new `speech-nemotron` directory contains the model and native runtimes. Downloaded third-party license notices remain beside their runtime. Portable installations use their own data directory.
-
-Feature builds use the `feature-rich-v*` prerelease channel. Native playback/fullscreen/PiP, installer upgrades, core checks and real native speech inference must pass before publication.
-
-See [NEMOTRON-BENCHMARKS.md](NEMOTRON-BENCHMARKS.md) for test scope and limitations.
+The release retains the existing feature-rich-v* prerelease update channel. Native playback, fullscreen/PiP, installer upgrades, core checks and real Whisper recognition must pass before publication. Screen OCR translation remains retired; channel-provided CC remains available.

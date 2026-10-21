@@ -1,8 +1,6 @@
-> Feature Rich 0.14.0 uses local Whisper large-v3-turbo Q5 recognition (574 MB), then Azure translation, with optional synchronized 10–15 second buffered playback. Native Vulkan GPU and CPU runtimes are included. Prepare Whisper once in Translation settings; prior Nemotron downloads are retained for rollback.
+# HN-IPTV 0.14.0 — Feature Rich preview
 
-# HN-IPTV 0.13.1 — Feature Rich preview
-
-See [FEATURE-RICH.md](FEATURE-RICH.md) for Nemotron/Azure translation setup, fullscreen fixes and installable branch artifacts. The installer upgrades an existing stable copy in place and preserves saved data.
+See [FEATURE-RICH.md](FEATURE-RICH.md) for Whisper/Azure translation setup, fullscreen fixes and installable branch artifacts. The installer upgrades an existing stable copy in place and preserves saved data.
 
 A Windows x64 IPTV player built with C#/.NET 10, WPF and mpv.
 

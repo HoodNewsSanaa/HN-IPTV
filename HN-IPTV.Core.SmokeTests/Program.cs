@@ -403,6 +403,14 @@ Console.WriteLine("Translation settings, caption continuity, phrase segmentation
 
 await AzureTranslationChecks.RunAsync();
 
+Check(!HnIptv.Translation.SpeechBoundary.ShouldDecode(5,4.8,0),"brief breath does not force a speech block");
+Check(HnIptv.Translation.SpeechBoundary.ShouldDecode(5,4.1,0),"speech pause becomes a candidate boundary");
+Check(!HnIptv.Translation.SpeechBoundary.ShouldDecode(5.5,4.1,5),"unfinished candidate waits for more context before another decode");
+Check(HnIptv.Translation.SpeechBoundary.EndsSentence("He asked, \u2018Why?\u2019"),"quoted question can close a sentence");
+Check(HnIptv.Translation.SpeechBoundary.EndsSentence("\u0647\u0644 \u0647\u0630\u0627 \u0635\u062d\u064a\u062d\u061f"),"Arabic question mark closes a sentence");
+Check(!HnIptv.Translation.SpeechBoundary.EndsSentence("because the next"),"unfinished clause does not close a sentence");
+Console.WriteLine("Adaptive speech boundary checks passed.");
+
 static void Check(bool condition, string name)
 {
     if (!condition) throw new Exception(name + " check failed");

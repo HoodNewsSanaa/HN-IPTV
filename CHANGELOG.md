@@ -2,6 +2,7 @@
 
 - Replace Nemotron recognition with multilingual Whisper large-v3-turbo Q5 (574 MB), using Whisper.net 1.9.1 and whisper.cpp.
 - Keep Azure text translation and the Live / 10-second / 15-second synchronized playback choices.
+- Add a pinned 0.9 MB Silero VAD model for adaptive endpoints: pause plus terminal punctuation, bounded by an 8/12-second maximum. Unfinished candidate text stays private until more context or the deadline.
 - Decode buffered speech as longer batches with punctuation, language detection, segment timestamps and no-speech filtering. Text cannot convey all vocal tone or emotion.
 - Include native Vulkan GPU and CPU runtimes; no Python environment or CUDA toolkit download. Auto validates GPU inference and falls back to CPU if unavailable.
 - Keep the model resident between batches, resample complete batches to 16 kHz, and isolate native inference from the player.

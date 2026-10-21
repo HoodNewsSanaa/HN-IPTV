@@ -1,6 +1,8 @@
+Silero VAD v6.2.0 is MIT (licenses/Silero-VAD.txt), downloaded separately as a 885,098-byte GGML file from ggml-org/whisper-vad revision 9ffd54a1e1ee413ddf265af9913beaf518d1639b. SHA-256: 2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987.
+
 ## Whisper recognition (0.14.0)
 
-Whisper.net 1.9.1 and its native CPU/Vulkan runtimes are distributed under MIT; see licenses/Whisper.net.txt. The underlying whisper.cpp runtime is MIT; see licenses/whisper.cpp.txt. OpenAI Whisper model weights are MIT; the quantized multilingual large-v3-turbo model is downloaded separately from ggerganov/whisper.cpp at revision 98aa99a0a9db05ae2342309f5096248665f7cba3. Model SHA-256: 394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2.
+Whisper.net 1.9.1 and its native CPU/Vulkan runtimes are distributed under MIT; see licenses/Whisper.net.txt. The underlying whisper.cpp runtime is MIT; see licenses/whisper.cpp.txt. OpenAI Whisper model weights are MIT; the quantized multilingual large-v3-turbo model is downloaded separately from ggerganov/whisper.cpp at revision 98aa99a0a9db05ae2342309f5096248665f7cba3. See licenses/OpenAI-Whisper.txt for the model license. Model SHA-256: 394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2.
 
 The current package no longer uses NVIDIA NeMo-Speech.cpp. Older acknowledgments below document previous releases.
 

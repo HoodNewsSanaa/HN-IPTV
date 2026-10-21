@@ -11,8 +11,9 @@ internal static class LocalTranslationRuntime
 {
     internal static string Root=>Path.Combine(AppStorage.DataDirectory,"speech-whisper");
     internal static string Models=>Path.Combine(Root,"ggml-large-v3-turbo-q5_0.bin");
+    internal static string VadModel=>Path.Combine(Root,"ggml-silero-v6.2.0.bin");
     internal static string Worker=>Path.Combine(Path.GetDirectoryName(typeof(LocalTranslationRuntime).Assembly.Location)!,"HN-IPTV.SpeechWorker.exe");
-    internal static bool Ready=>File.Exists(Models)&&File.Exists(Path.Combine(Root,"ready-v1.json"));
+    internal static bool Ready=>File.Exists(Models)&&File.Exists(VadModel)&&File.Exists(Path.Combine(Root,"ready-v1.json"));
     private static readonly HttpClient Http=new(){Timeout=TimeSpan.FromMinutes(30)};
     private static readonly SemaphoreSlim SetupGate=new(1,1);
     private const string Hash="394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2";
@@ -27,6 +28,11 @@ internal static class LocalTranslationRuntime
                 progress("Downloading multilingual Whisper large-v3-turbo Q5 (574 MB)...");
                 await Download("https://huggingface.co/ggerganov/whisper.cpp/resolve/98aa99a0a9db05ae2342309f5096248665f7cba3/ggml-large-v3-turbo-q5_0.bin",Models,Hash,600_000_000,progress,ct);
             }else await PackageIntegrity.VerifyAsync(Models,Hash,ct);
+            const string vadHash="2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987";
+            if(!File.Exists(VadModel)) {
+                progress("Downloading local speech-boundary detector (0.9 MB)...");
+                await Download("https://huggingface.co/ggml-org/whisper-vad/resolve/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v6.2.0.bin",VadModel,vadHash,1_000_000,progress,ct);
+            }else await PackageIntegrity.VerifyAsync(VadModel,vadHash,ct);
             string backend=settings.Acceleration=="cpu"?"cpu":"vulkan";
             progress("Validating Whisper model and "+backend+" inference...");
             try{await Validate(backend,settings,ct);}

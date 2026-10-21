@@ -35,14 +35,17 @@ try {
     if(rate!=44100||channels!=1||bits!=16)throw new Exception("Unexpected fixture format.");
     byte[] stereo=new byte[pcm.Length*2];for(int i=0;i<pcm.Length/2;i++){stereo[i*4]=stereo[i*4+2]=pcm[i*2];stereo[i*4+1]=stereo[i*4+3]=pcm[i*2+1];}
     for(int offset=0;offset<stereo.Length;offset+=56448)await Results((Task)recognize.Invoke(worker,[stereo.AsSpan(offset,Math.Min(56448,stereo.Length-offset)).ToArray(),CancellationToken.None])!);
+    // A trailing pause should finalize a complete sentence before the forced batch deadline.
+    for(int i=0;i<4;i++)await Results((Task)recognize.Invoke(worker,[new byte[56448],CancellationToken.None])!);
+    if(timed.Count==0)throw new Exception("Speech pause and punctuation did not produce an adaptive endpoint.");
     await Results((Task)finish.Invoke(worker,[CancellationToken.None])!);
     if(!texts.Any(x=>x.Contains("hello",StringComparison.OrdinalIgnoreCase)))throw new Exception("Native worker did not recognize spoken fixture.");
     if(!texts.Any(x=>x.Contains('.')||x.Contains('?')))throw new Exception("Whisper did not preserve sentence punctuation.");
-    if(timed.Count==0||timed.Any(t=>t.Start<0||t.End<=t.Start||t.End>pcm.Length/88200d+.5))throw new Exception("Whisper segment timestamps do not match the input audio clock.");
+    if(timed.Count==0||timed.Any(t=>t.Start<0||t.End<=t.Start||t.End>pcm.Length/88200d+1.8))throw new Exception("Whisper segment timestamps do not match the input audio clock.");
     await (Task)reset.Invoke(worker,[CancellationToken.None])!;texts.Clear();
     await Results((Task)recognize.Invoke(worker,[new byte[176400],CancellationToken.None])!);
     await Results((Task)finish.Invoke(worker,[CancellationToken.None])!);
     if(texts.Any(x=>!string.IsNullOrWhiteSpace(x)))throw new Exception("Old channel words leaked into silence after reset.");
 }finally{await worker.DisposeAsync();}
-File.WriteAllText(args[2],JsonSerializer.Serialize(new{passed=true,native_streaming=true,previous_downloads_preserved=true,model="Whisper large-v3-turbo Q5",seconds=elapsed.Elapsed.TotalSeconds,backend="cpu"}));
+File.WriteAllText(args[2],JsonSerializer.Serialize(new{passed=true,adaptive_endpoint=true,previous_downloads_preserved=true,model="Whisper large-v3-turbo Q5",seconds=elapsed.Elapsed.TotalSeconds,backend="cpu"}));
 Console.WriteLine("Actual native worker speech, reset, silence and migration checks passed.");

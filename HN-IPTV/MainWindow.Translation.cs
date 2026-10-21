@@ -162,9 +162,9 @@ public partial class MainWindow
             await foreach(var chunk in buffered.Chunks.ReadAllAsync(ct)) {
                 through=chunk.AudioEndSeconds;var recognized=await worker.RecognizeAsync(chunk.Wave,ct);Collect(recognized);
                 if(!_translationGeneration.IsCurrent(generation)||ct.IsCancellationRequested)return;
-                // Prefer a completed utterance after six seconds; cap a continuous speaker to retain headroom.
+                // Prefer a pause and punctuated utterance after four seconds; cap a continuous speaker to retain headroom.
                 double maximum=settings.BufferSeconds==10?8:12;
-                if((through-batchStart>=6&&recognized.Any(r=>r.Final&&r.Text.Any(char.IsLetterOrDigit)))||through-batchStart>=maximum)await Flush();
+                if((through-batchStart>=4&&recognized.Any(r=>r.Final&&r.Text.Any(char.IsLetterOrDigit)))||through-batchStart>=maximum)await Flush();
             }
             if(through>batchStart)await Flush();
         }catch(OperationCanceledException){}catch(Exception ex){if(!ct.IsCancellationRequested){App.LogException("translation.buffer.recognition",ex);TranslationFailed("The translated buffer stopped. Retry Translate or choose Live.");}}
