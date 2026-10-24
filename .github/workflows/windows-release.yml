@@ -4,7 +4,7 @@ on:
     inputs:
       version:
         description: Version to build
-        default: '0.15.0'
+        default: '0.16.0'
         required: true
       publish_release:
         description: Publish the tested packages as a GitHub Release
@@ -80,6 +80,9 @@ jobs:
       - name: Portable updater preservation and rollback
         shell: pwsh
         run: ./test-updater.ps1
+      - name: Automatic startup installer security and failure recovery
+        shell: pwsh
+        run: ./test-startup-updater.ps1
       - name: Publish application once
         shell: pwsh
         env:

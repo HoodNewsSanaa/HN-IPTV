@@ -42,6 +42,9 @@ public partial class App : Application
         }
         _installerMutex = new Mutex(false, "HN-IPTV-Application");
         _logWriter = Task.Run(WriteLogAsync);
+        if(AppStorage.TestDataDirectory==null&&!e.Args.Contains("--skip-startup-update")) {
+            if(await StartupUpdater.RunAsync()){Shutdown();return;}
+        }
         var window = new MainWindow();
         MainWindow = window;
         window.ContentRendered += (_, _) => LogDiagnostic($"startup.window_ms={StartupClock.ElapsedMilliseconds}");

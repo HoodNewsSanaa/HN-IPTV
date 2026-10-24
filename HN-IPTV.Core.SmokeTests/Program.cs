@@ -332,8 +332,14 @@ var previewJson = updateJson.Replace("v0.10.0", "feature-rich-v0.10.0")
 Check(GitHubUpdates.Parse(previewJson, new Version(0,9,2), false, true) != null, "feature update channel accepts its own previews");
 Check(GitHubUpdates.Parse(previewJson, new Version(0,9,2), false) == null, "stable update channel excludes previews");
 Check(GitHubUpdates.Parse(updateJson, new Version(0,9,2), false, true) == null, "feature update channel does not switch to stable builds");
+try {
+    GitHubUpdates.ValidateAsset(new HnIptv.Services.AppRelease(new Version(99,0,0), "https://github.com/HoodNewsSanaa/HN-IPTV/releases/tag/feature-rich-v99.0.0", "HN-IPTV-Setup.exe", "https://example.com/installer.exe", new string('a',64)), false);
+    throw new Exception("foreign update accepted");
+} catch(InvalidDataException) { }
+var mismatchedDigest = previewJson.Replace("\"browser_download_url\"", "\"digest\":\"sha256:" + new string('f',64) + "\",\"browser_download_url\"");
+try { GitHubUpdates.Parse(mismatchedDigest,new Version(0,9,2),false,true);throw new Exception("conflicting digest accepted"); }catch(InvalidDataException){}
 var translationSettings = new HnIptv.Translation.TranslationSettings { Provider = "azure", InputLanguage = "JA-jp", OutputLanguage = "es", Acceleration = "invalid" }.Normalize();
-Check(translationSettings.InputLanguage == "ja" && translationSettings.Target == "es", "translation language/model normalization");
+Check(translationSettings.InputLanguage == "ja" && translationSettings.Target == "en", "translation language/model normalization");
 Check(translationSettings.Acceleration == "auto", "invalid acceleration falls back to auto");
 Check((translationSettings with { Acceleration = "cuda" }).Normalize().Acceleration == "auto", "legacy CUDA preference migrates to automatic Whisper acceleration");
 var gpuSettings = (translationSettings with { Acceleration = "vulkan" }).Normalize();
@@ -341,7 +347,7 @@ Check(gpuSettings.Acceleration == "vulkan", "Vulkan GPU recognition remains sele
 var localSettings = new HnIptv.Translation.TranslationSettings { Provider = "whisper", OutputLanguage = "es" }.Normalize();
 Check(localSettings.UsesLocalTranslation && localSettings.Target == "en" && localSettings.OutputLanguage == "en", "on-device Whisper only outputs English");
 Check(new HnIptv.Translation.TranslationSettings().UsesLocalTranslation, "new installations default to local translation");
-Check((localSettings with { Provider = "azure", OutputLanguage = "ja" }).Normalize().Target == "ja", "Azure retains other target languages");
+Check((localSettings with { Provider = "azure", OutputLanguage = "ja" }).Normalize().Provider == "whisper", "old Azure settings migrate to on-device English translation");
 var translationVersion = new HnIptv.Translation.TranslationGeneration();
 long firstTranslation = translationVersion.Current;
 translationVersion.Advance();
@@ -350,7 +356,7 @@ var translationFile = Path.Combine(Path.GetTempPath(), "hn-translation-" + Guid.
 try {
     gpuSettings.Save(translationFile);
     var savedTranslation = HnIptv.Translation.TranslationSettings.Load(translationFile);
-    Check(savedTranslation.InputLanguage == "ja" && savedTranslation.OutputLanguage == "es" && savedTranslation.Acceleration == "vulkan", "manual translation languages and GPU preference persist");
+    Check(savedTranslation.InputLanguage == "ja" && savedTranslation.OutputLanguage == "en" && savedTranslation.Acceleration == "vulkan", "manual translation languages and GPU preference persist");
 } finally { File.Delete(translationFile); }
 var captionHistory = new HnIptv.Translation.CaptionHistory();
 Check(captionHistory.Append("Hello world.") == "Hello world.", "initial caption");
@@ -405,7 +411,7 @@ Check(regionTracker.Update(Array.Empty<HnIptv.Translation.ScreenTranslationRegio
 regionTracker.Clear();
 Console.WriteLine("Translation settings, caption continuity, phrase segmentation, positioned overlays and stale-result cancellation checks passed.");
 
-await AzureTranslationChecks.RunAsync();
+
 
 Check(!HnIptv.Translation.SpeechBoundary.ShouldDecode(5,4.8,0),"brief breath does not force a speech block");
 Check(HnIptv.Translation.SpeechBoundary.ShouldDecode(5,4.1,0),"speech pause becomes a candidate boundary");

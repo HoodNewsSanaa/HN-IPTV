@@ -40,19 +40,15 @@ internal static class Program
                 results["window_ready_ms"] = clock.Elapsed.TotalMilliseconds;
                 results["engine"] = BuildInfo.Engine;
                 results["app_sha256"] = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(typeof(MainWindow).Assembly.Location))).ToLowerInvariant();
-                AzureTranslationCredentials.Save("synthetic-azure-key-for-regression");
-                if (AzureTranslationCredentials.Load() != "synthetic-azure-key-for-regression" ||
-                    Encoding.UTF8.GetString(File.ReadAllBytes(AzureTranslationCredentials.PathForKey)).Contains("synthetic-azure-key"))
-                    throw new InvalidOperationException("Azure key was not encrypted for this Windows account.");
-                var azureDialog = new TranslationSettingsDialog(new HnIptv.Translation.TranslationSettings { Provider = "azure" });
-                var password = (PasswordBox)typeof(TranslationSettingsDialog).GetField("_azureKey",Private)!.GetValue(azureDialog)!;
-                if (password.Password != "synthetic-azure-key-for-regression")
-                    throw new InvalidOperationException("Azure settings did not load the saved masked key.");
-                azureDialog.Close();
-                AzureTranslationCredentials.Save("");
-                if (File.Exists(AzureTranslationCredentials.PathForKey) || File.Exists(AzureTranslationCredentials.PathForKey+".bak"))
-                    throw new InvalidOperationException("Clearing the Azure key retained an old credential.");
-                results["azure_key_encryption_and_settings"] = true;
+                var whisperDialog = new TranslationSettingsDialog(new HnIptv.Translation.TranslationSettings());
+                whisperDialog.Close();
+                window.ObserveWhisperResult("es","Hello world.");
+                var languageInfo=(TextBlock)typeof(MainWindow).GetField("WhisperLanguageInfo",Private|BindingFlags.Public)!.GetValue(window)!;
+                var outputInfo=(TextBlock)typeof(MainWindow).GetField("WhisperOutputInfo",Private|BindingFlags.Public)!.GetValue(window)!;
+                if(!languageInfo.Text.Contains("Spanish")||!outputInfo.Text.Contains("Hello world."))throw new Exception("Whisper Info panel did not render detected language and output.");
+                window.ResetWhisperInfo();
+                if(outputInfo.Text.Contains("Hello world."))throw new Exception("Old Whisper output survived a reset.");
+                results["whisper_info_language_output_and_reset"]=true;
                 var channelList = (ListBox)typeof(MainWindow).GetField("ChannelsList", Private | BindingFlags.Public)!.GetValue(window)!;
                 var controller = (PlaybackController)typeof(MainWindow).GetField("_playback", Private)!.GetValue(window)!;
                 var kind = Enum.Parse(typeof(MainWindow).GetNestedType("SourceKind", BindingFlags.NonPublic)!, "M3u");

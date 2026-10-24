@@ -1,6 +1,6 @@
-# HN-IPTV 0.15.0 — Feature Rich preview
+# HN-IPTV 0.16.0 — Feature Rich preview
 
-See [FEATURE-RICH.md](FEATURE-RICH.md) for Whisper on-device or Azure translation setup, fullscreen fixes and installable branch artifacts. The installer upgrades an existing stable copy in place and preserves saved data.
+See [FEATURE-RICH.md](FEATURE-RICH.md) for Whisper on-device translation setup and startup updates, fullscreen fixes and installable branch artifacts. The installer upgrades an existing stable copy in place and preserves saved data.
 
 A Windows x64 IPTV player built with C#/.NET 10, WPF and mpv.
 

@@ -4,7 +4,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 namespace HnIptv.Services;
 
-public sealed record AppRelease(Version Version, string PageUrl, string AssetName, string DownloadUrl, string Sha256);
+public sealed record AppRelease(Version Version, string PageUrl, string AssetName, string DownloadUrl, string Sha256, bool HasAssetDigest = false);
 
 public sealed class GitHubUpdates(HttpClient client)
 {
@@ -18,8 +18,14 @@ public sealed class GitHubUpdates(HttpClient client)
         if (response.StatusCode == HttpStatusCode.NotFound) return null;
         response.EnsureSuccessStatusCode();
         if (response.Content.Headers.ContentLength > 2_000_000) throw new InvalidDataException("Release response is too large.");
-        var json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-        if (json.Length > 2_000_000) throw new InvalidDataException("Release response is too large.");
+        await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        using var bytes = new MemoryStream();
+        var buffer = new byte[16384]; int count;
+        while ((count = await stream.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0) {
+            if (bytes.Length + count > 2_000_000) throw new InvalidDataException("Release response is too large.");
+            bytes.Write(buffer, 0, count);
+        }
+        var json = System.Text.Encoding.UTF8.GetString(bytes.GetBuffer(),0,(int)bytes.Length);
         if (!featureRich) return Parse(json, current, portable);
         using var releases = JsonDocument.Parse(json);
         return releases.RootElement.EnumerateArray().Select(item => Parse(item.GetRawText(), current, portable, true))
@@ -45,11 +51,23 @@ public sealed class GitHubUpdates(HttpClient client)
         var body = root.TryGetProperty("body", out var notes) ? notes.GetString() ?? "" : "";
         var match = Regex.Match(body, @"(?im)^([a-f0-9]{64})[ \t]+\*?" + Regex.Escape(name) + @"[ \t]*\r?$");
         if (!match.Success) throw new InvalidDataException("Release has no package checksum.");
+        var asset=root.GetProperty("assets").EnumerateArray().Single(a=>a.GetProperty("name").GetString()==name);
+        bool hasDigest=asset.TryGetProperty("digest",out var digest)&&digest.ValueKind==JsonValueKind.String;
+        if(hasDigest&&!string.Equals(digest.GetString(),"sha256:"+match.Groups[1].Value,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Release checksum conflicts with GitHub asset digest.");
         return new AppRelease(version, "https://github.com/" + Repository + "/releases/tag/" + Uri.EscapeDataString(tag),
-            name, url!, match.Groups[1].Value.ToUpperInvariant());
+            name, url!, match.Groups[1].Value.ToUpperInvariant(),hasDigest);
+    }
+    public static void ValidateAsset(AppRelease release,bool portable)
+    {
+        string name=portable?"HN-IPTV-Portable.zip":"HN-IPTV-Setup.exe";
+        string tag="feature-rich-v"+release.Version;
+        if(!release.PageUrl.EndsWith("/"+tag,StringComparison.Ordinal))tag="v"+release.Version;
+        if(release.AssetName!=name||!TrustedAsset(release.DownloadUrl,tag,name)||
+            release.PageUrl!="https://github.com/"+Repository+"/releases/tag/"+tag||
+            !Regex.IsMatch(release.Sha256,@"\A[a-fA-F0-9]{64}\z"))throw new InvalidDataException("Untrusted update package.");
     }
     private static bool TrustedAsset(string? url, string tag, string name) =>
         Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == "https" && uri.Host == "github.com" &&
         uri.AbsolutePath == "/" + Repository + "/releases/download/" + Uri.EscapeDataString(tag) + "/" + name &&
-        string.IsNullOrEmpty(uri.Query);
+        string.IsNullOrEmpty(uri.Query)&&string.IsNullOrEmpty(uri.Fragment)&&string.IsNullOrEmpty(uri.UserInfo)&&uri.IsDefaultPort;
 }

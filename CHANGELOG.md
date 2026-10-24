@@ -1,3 +1,15 @@
+# 0.16.0
+
+- Remove Azure translation, credentials UI and network client. Existing settings migrate to on-device Whisper Medium English translation.
+- Add Whisper state, detected input language, manual override, and latest English output to Info. Output stays in memory and clears on stop/channel changes; buffered output is labeled as ahead of playback.
+- Check for updates before opening the player. Offer progress and Continue without updating; network/check failures open the installed version.
+- Automatically install a newer release from the same Feature Rich update channel and relaunch. Require matching release SHA-256 and GitHub asset digest, restrict package URLs, and reject downgrades.
+- Reverify the installer while holding it against replacement immediately before execution. Install silently as the current user without requesting elevation.
+- Avoid immediate retry loops after restart, cool down failed installed updates, and retain the existing portable rollback/data-preservation behavior.
+- Validate updater source/digest rejection, execution-time tampering, installer failures, native detected Spanish/English output, Info reset and installer upgrades.
+
+Security boundary: release checksums and GitHub asset digests trust the GitHub repository and HTTPS. Releases are not Authenticode signed; account/release-pipeline compromise is not independently prevented by this updater.
+
 # 0.15.0
 
 - Add Whisper on-device speech-to-English translation with no Azure key, API quota or translation network requests.

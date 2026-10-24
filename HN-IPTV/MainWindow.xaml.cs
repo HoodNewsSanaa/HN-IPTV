@@ -113,7 +113,7 @@ public partial class MainWindow : Window
         InitializeTranslation();
         CaptionsButton.Visibility = BuildInfo.Engine == "mpv" ? Visibility.Visible : Visibility.Collapsed;
         _playback.PlaybackError += () => Dispatcher.BeginInvoke(new Action(() => { if (!_closing) _ = RecoverPlaybackAsync(); }));
-        Loaded += async (_, _) => { try { await Task.Delay(1500, _updateCts.Token); if (!_closing && AppStorage.TestDataDirectory == null) await CheckForUpdatesAsync(false); } catch (OperationCanceledException) { } };
+
         _groupSearchDebounce.Tick += (_, _) => { _groupSearchDebounce.Stop(); _groupView?.Refresh();
             if (GroupsList.SelectedItem == null) GroupsList.SelectedItem = _allGroups.FirstOrDefault(FilterGroup); };
         _searchDebounce.Tick += (_, _) => { _searchDebounce.Stop(); RefreshChannels(); };
@@ -758,6 +758,7 @@ public partial class MainWindow : Window
             _tuneGeneration++;
             if(_bufferedTranslation!=null||_bufferPlaybackStopped)await StopTranslationSessionAsync(preserveWorker:true);
             else {_translationGeneration.Advance();_translationOverlay?.Clear();}
+            ResetWhisperInfo();
             _playingChannel = channel; _tuneWatch = Stopwatch.StartNew(); _tuneSubmitted = false;
             _streamInfo = StreamInfo.Empty; RenderStreamInfo();
             _infoTimer.Interval = TimeSpan.FromMilliseconds(200); _infoTimer.Start();
@@ -901,6 +902,7 @@ public partial class MainWindow : Window
             (string.IsNullOrWhiteSpace(_streamInfo.VideoCodec) ? "" : " · " + _streamInfo.VideoCodec);
         StreamBitrateInfo.Text = "Input bitrate: " + _streamInfo.BitrateText + " (received data; varies with buffering)";
         StreamAudioInfo.Text = "Audio: " + _streamInfo.AudioText;
+        RenderWhisperInfo();
     }
     private async Task UpdateStreamInfoAsync()
     {

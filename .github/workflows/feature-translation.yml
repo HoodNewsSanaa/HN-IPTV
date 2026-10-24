@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - name: Core, streaming phrase and simulated Azure regressions
+      - name: Core and streaming phrase regressions
         run: dotnet run --project HN-IPTV.Core.SmokeTests -c Release
       - name: Publish application and isolated recognition host
         shell: pwsh
@@ -54,7 +54,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Spanish speech generation failed.' }
       - name: Actual native speech, reset, silence and safe migration
         run: dotnet run --project tests/TranslationRuntimeHarness -c Release -- artifacts/publish/HN-IPTV.dll artifacts/whisper-runtime-data artifacts/native-runtime.json artifacts/spoken.wav
-      - name: Actual on-device Spanish to English translation without an Azure key
+      - name: Actual local translation and detected input language
         run: dotnet run --project tests/TranslationRuntimeHarness -c Release -- artifacts/publish/HN-IPTV.dll artifacts/whisper-runtime-data artifacts/local-translation.json artifacts/spanish.wav local
       - uses: actions/upload-artifact@v4
         if: always()

@@ -9,20 +9,18 @@ public sealed record TranslationSettings
     public string OutputLanguage { get; init; } = "auto";
     public string Acceleration { get; init; } = "auto";
     public string Provider { get; init; } = "whisper";
-    public string AzureRegion { get; init; } = "global";
     public int BufferSeconds { get; init; } = 15;
-    public bool UsesLocalTranslation => Provider == "whisper";
-    public string Target => UsesLocalTranslation ? "en" : OutputLanguage == "auto" ? NormalizeLanguage(CultureInfo.CurrentUICulture.TwoLetterISOLanguageName) : NormalizeLanguage(OutputLanguage);
+    public bool UsesLocalTranslation => true;
+    public string Target => "en";
     public static string NormalizeLanguage(string? value)
     {
         var code = (value ?? "auto").Trim().ToLowerInvariant().Split('-')[0];
         return code is "auto" || (code.Length is 2 or 3 && code.All(char.IsAsciiLetter)) ? code : "auto";
     }
     public TranslationSettings Normalize() => this with {
-        InputLanguage = NormalizeLanguage(InputLanguage), OutputLanguage = Provider == "azure" ? NormalizeLanguage(OutputLanguage) : "en",
-        Provider = Provider == "azure" ? "azure" : "whisper",
+        InputLanguage = NormalizeLanguage(InputLanguage), OutputLanguage = "en",
+        Provider = "whisper",
         BufferSeconds = BufferSeconds is 10 or 15 ? BufferSeconds : 0,
-        AzureRegion = string.IsNullOrWhiteSpace(AzureRegion) ? "global" : AzureRegion.Trim().ToLowerInvariant(),
         Acceleration = Acceleration is "auto" or "cpu" or "vulkan" ? Acceleration : "auto"
     };
     public static TranslationSettings Load(string path) => File.Exists(path)

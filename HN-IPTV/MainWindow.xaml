@@ -180,6 +180,10 @@
                         <TextBlock x:Name="StreamVideoInfo" Text="Video: Unavailable" TextWrapping="Wrap" FontSize="12"/>
                         <TextBlock x:Name="StreamBitrateInfo" Text="Input bitrate: Unavailable" TextWrapping="Wrap" FontSize="12" Margin="0,3,0,0"/>
                         <TextBlock x:Name="StreamAudioInfo" Text="Audio: Unavailable" TextWrapping="Wrap" FontSize="12" Margin="0,3,0,0"/>
+                        <TextBlock x:Name="WhisperStateInfo" Text="Whisper: Off" TextWrapping="Wrap" FontSize="12" Margin="0,8,0,0"/>
+                        <TextBlock x:Name="WhisperLanguageInfo" Text="Whisper input: Waiting for speech / not detected" TextWrapping="Wrap" FontSize="12" Margin="0,3,0,0"/>
+                        <TextBlock x:Name="WhisperOutputInfo" Text="Latest Whisper output: None yet" TextWrapping="Wrap" MaxHeight="100" TextTrimming="CharacterEllipsis" FontSize="12" Margin="0,3,0,0"/>
+
                     </StackPanel>
                 </Border>
                 <Grid Grid.Row="3" x:Name="GuideRoot" Margin="0,18,0,6">

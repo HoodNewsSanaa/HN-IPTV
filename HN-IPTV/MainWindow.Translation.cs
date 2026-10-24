@@ -7,6 +7,25 @@ namespace HnIptv;
 
 public partial class MainWindow
 {
+    private string _whisperLanguage="",_whisperOutput="";
+    internal void ObserveWhisperResult(string language,string text)
+    {
+        if(string.IsNullOrWhiteSpace(text))return;
+        _whisperLanguage=TranslationSettings.NormalizeLanguage(language);
+        string clean=System.Text.RegularExpressions.Regex.Replace(text,@"\s+"," ").Trim();
+        _whisperOutput=clean.Length>600?clean[..600]+"...":clean;
+        RenderWhisperInfo();
+    }
+    internal void ResetWhisperInfo(){_whisperLanguage=_whisperOutput="";RenderWhisperInfo();}
+    private void RenderWhisperInfo()
+    {
+        if(WhisperLanguageInfo==null)return;
+        string detected=_whisperLanguage;
+        if(detected.Length>0&&detected!="auto")try{detected+=" ("+System.Globalization.CultureInfo.GetCultureInfo(detected).EnglishName+")";}catch(System.Globalization.CultureNotFoundException){}
+        WhisperLanguageInfo.Text="Whisper input: "+(detected.Length==0||detected=="auto"?"Waiting for speech / not detected":detected)+(_translationSettings.InputLanguage=="auto"?"":" | Input override: "+_translationSettings.InputLanguage);
+        WhisperStateInfo.Text="Whisper: "+(_translateSpeech?"On - English output | "+(_translationWorker?.Backend??"Preparing model"):"Off");
+        WhisperOutputInfo.Text="Latest Whisper output (English, ahead of playback when buffered): "+(_whisperOutput.Length==0?"None yet":_whisperOutput);
+    }
     private TranslationSettings _translationSettings=new();
     private TranslationOverlay? _translationOverlay;
     private readonly TimedCaptions _bufferedCaptions=new();
@@ -45,7 +64,7 @@ public partial class MainWindow
     private void RenderTranslationButtons()
     {
         TranslateSpeechButton.Content=_translateSpeech?(_translationSettings.BufferSeconds>0?"Speech: Buffered":"Speech: On"):"Translate speech";
-        TranslateScreenButton.Visibility=Visibility.Collapsed;RenderToggleStates();
+        TranslateScreenButton.Visibility=Visibility.Collapsed;RenderToggleStates();RenderWhisperInfo();
     }
     private async void TranslationSettings_Click(object sender,RoutedEventArgs e)
     {
@@ -61,8 +80,7 @@ public partial class MainWindow
     }
     private async void TranslateSpeech_Click(object sender,RoutedEventArgs e)
     {
-        bool keyReady=_translationSettings.UsesLocalTranslation;try{if(!keyReady)keyReady=!string.IsNullOrWhiteSpace(AzureTranslationCredentials.Load());}catch(Exception ex){App.LogException("translation.key",ex);}
-        if(!_translateSpeech&&(!LocalTranslationRuntime.IsReady(_translationSettings)||!keyReady)){SetStatus("Prepare the selected Whisper model in Translation settings. Azure mode also needs a key.");TranslationSettings_Click(this,new RoutedEventArgs());return;}
+        if(!_translateSpeech&&!LocalTranslationRuntime.IsReady(_translationSettings)){SetStatus("Prepare Whisper in Translation settings.");TranslationSettings_Click(this,new RoutedEventArgs());return;}
         if(!_translateSpeech) {
             var mode=new TranslationModeDialog(_translationSettings.BufferSeconds,BuildInfo.Engine=="mpv"){Owner=this};
             if(mode.ShowDialog()!=true)return;
@@ -81,7 +99,6 @@ public partial class MainWindow
             if(!_translationGeneration.IsCurrent(generation)||_closing||!_translateSpeech||_playingChannel==null||!LocalTranslationRuntime.IsReady(_translationSettings))return;
             _translationOverlay??=CreateTranslationOverlay();_translationOverlay.Clear();
             var session=new CancellationTokenSource();_translationSession=session;var settings=_translationSettings;
-            AzureTranslatorClient? azure=settings.UsesLocalTranslation?null:new AzureTranslatorClient(AzureTranslationCredentials.Load(),settings.AzureRegion);
             bool reused=_translationWorker!=null;
             var worker=_translationWorker??new LocalTranslationWorker(settings);_translationWorker=worker;_translationWorkerSettings=settings;
             if(reused)await worker.ResetAsync(session.Token);
@@ -97,7 +114,7 @@ public partial class MainWindow
                 _translationOverlay.SpeechPlaybackClock=()=>_streamInfo.PositionMilliseconds>=0?_streamInfo.PositionMilliseconds/1000d:null;
                 var phrases=Channel.CreateBounded<PendingPhrase>(new BoundedChannelOptions(8){FullMode=BoundedChannelFullMode.Wait,SingleReader=true,SingleWriter=true});
                 _speechTranslation=RecognizeBufferedAsync(buffered,worker,phrases.Writer,settings,generation,session.Token);
-                _cloudTranslation=TranslatePhrasesAsync(phrases.Reader,azure,settings,generation,session.Token,buffered);
+                _cloudTranslation=TranslatePhrasesAsync(phrases.Reader,settings,generation,session.Token,buffered);
                 SetStatus("Preparing the "+settings.BufferSeconds+"-second translated buffer...");
                 _translationOverlay.SetMessage("Preparing synchronized captions...",90);
                 await buffered.WaitReadyAsync(session.Token);
@@ -117,10 +134,10 @@ public partial class MainWindow
                 if(!_translationGeneration.IsCurrent(generation)||session.IsCancellationRequested)return;
                 var phrases=Channel.CreateBounded<PendingPhrase>(new BoundedChannelOptions(4){FullMode=BoundedChannelFullMode.DropOldest,SingleReader=true,SingleWriter=true});
                 _speechTranslation=RecognizeAudioAsync(capture,worker,phrases.Writer,settings,generation,session.Token);
-                _cloudTranslation=TranslatePhrasesAsync(phrases.Reader,azure,settings,generation,session.Token);
-                _translationOverlay.SetMessage((settings.UsesLocalTranslation?"Whisper on-device English translation ready (":"Whisper + Azure ready (")+worker.Backend+").",3);
+                _cloudTranslation=TranslatePhrasesAsync(phrases.Reader,settings,generation,session.Token);
+                _translationOverlay.SetMessage(("Whisper on-device English translation ready (")+worker.Backend+").",3);
             }
-        }catch(OperationCanceledException){}catch(Exception ex){App.LogException("translation.start",ex);_translateSpeech=false;RenderTranslationButtons();SetStatus("Translation could not start. Check Whisper setup and, for Azure mode, the key/region.");await StopTranslationResourcesAsync(restoreLive:true);}
+        }catch(OperationCanceledException){}catch(Exception ex){App.LogException("translation.start",ex);_translateSpeech=false;RenderTranslationButtons();SetStatus("Translation could not start. Check Whisper setup.");await StopTranslationResourcesAsync(restoreLive:true);}
         finally{_translationGate.Release();}
     }
     private sealed record PendingPhrase(string Text,string Source,long At,double Start=0,double End=0,double Through=0);
@@ -135,8 +152,11 @@ public partial class MainWindow
                 previousEnd=chunk.AudioEndSeconds;
                 var results=await worker.RecognizeAsync(chunk.Wave,ct);
                 if(!_translationGeneration.IsCurrent(generation)||ct.IsCancellationRequested)return;
-                foreach(var result in results)foreach(string phrase in phrases.Update(result.Text,result.Final,chunk.AudioEndSeconds))
-                    output.TryWrite(new(phrase,settings.InputLanguage=="auto"?TranslationSettings.NormalizeLanguage(result.Language):settings.InputLanguage,chunk.CapturedAt));
+                foreach(var result in results) {
+                    ObserveWhisperResult(result.Language,result.Text);
+                    foreach(string phrase in phrases.Update(result.Text,result.Final,chunk.AudioEndSeconds))
+                        output.TryWrite(new(phrase,result.Language,chunk.CapturedAt));
+                }
             }
         }catch(OperationCanceledException){}catch(Exception ex){if(!ct.IsCancellationRequested){App.LogException("translation.recognition",ex);TranslationFailed("Whisper recognition stopped. Check Translation settings.");}}
         finally{output.TryComplete();}
@@ -145,7 +165,9 @@ public partial class MainWindow
     {
         double batchStart=0,through=0,start=double.PositiveInfinity,end=0;string language="auto";var text=new List<string>();
         void Collect(IReadOnlyList<RecognitionText> results) {
+            if(!_translationGeneration.IsCurrent(generation)||ct.IsCancellationRequested)return;
             foreach(var result in results.Where(r=>r.Final&&r.Text.Any(char.IsLetterOrDigit))) {
+                ObserveWhisperResult(result.Language,result.Text);
                 text.Add(result.Text);language=result.Language;
                 start=Math.Min(start,batchStart+result.StartSeconds);end=Math.Max(end,batchStart+result.EndSeconds);
             }
@@ -170,20 +192,20 @@ public partial class MainWindow
         }catch(OperationCanceledException){}catch(Exception ex){if(!ct.IsCancellationRequested){App.LogException("translation.buffer.recognition",ex);TranslationFailed("The translated buffer stopped. Retry Translate or choose Live.");}}
         finally{output.TryComplete();}
     }
-    private async Task TranslatePhrasesAsync(ChannelReader<PendingPhrase> input,AzureTranslatorClient? azure,TranslationSettings settings,long generation,CancellationToken ct,BufferedTranslationSource? buffered=null)
+    private async Task TranslatePhrasesAsync(ChannelReader<PendingPhrase> input,TranslationSettings settings,long generation,CancellationToken ct,BufferedTranslationSource? buffered=null)
     {
         try {
             await foreach(var phrase in input.ReadAllAsync(ct)) {
                 if(buffered==null&&System.Diagnostics.Stopwatch.GetElapsedTime(phrase.At).TotalSeconds>8)continue;
                 try {
-                    string text=phrase.Text.Length==0?"":settings.UsesLocalTranslation?phrase.Text:await azure!.TranslateAsync(phrase.Text,phrase.Source,settings.Target,ct);
+                    string text=phrase.Text;
                     if(ct.IsCancellationRequested||!_translationGeneration.IsCurrent(generation))return;
                     if(buffered!=null) {
                         _translationOverlay?.ScheduleSpeech(text,phrase.Start,phrase.End);
                         buffered.TranslatedThrough(phrase.Through);
                     }else if(System.Diagnostics.Stopwatch.GetElapsedTime(phrase.At).TotalSeconds<=10)_translationOverlay?.QueueSpeech(StreamingPhrases.Cues(text));
                 }catch(OperationCanceledException){throw;}
-                catch(Exception ex){App.LogException("translation.azure",ex);SetStatus(ex is InvalidOperationException?ex.Message:"Azure translation failed. Check the connection, key and region.");if(buffered!=null){TranslationFailed("Azure could not prepare synchronized captions. Buffered translation stopped; retry Translate.");return;}}
+                catch(Exception ex){App.LogException("translation.captions",ex);SetStatus(ex is InvalidOperationException?ex.Message:"Whisper captions could not be displayed.");if(buffered!=null){TranslationFailed("Whisper could not prepare synchronized captions. Buffered translation stopped; retry Translate.");return;}}
             }
         }catch(OperationCanceledException){}
     }
@@ -195,6 +217,7 @@ public partial class MainWindow
     }
     private async Task StopTranslationResourcesAsync(bool preserveWorker=false,bool restoreLive=false)
     {
+        ResetWhisperInfo();
         bool hadBuffer=_bufferedTranslation!=null||_bufferPlaybackStopped;_bufferPlaybackStopped=false;
         if(hadBuffer)_infoTimer.Interval=TimeSpan.FromSeconds(1);
         if(_bufferedTranslation!=null) {

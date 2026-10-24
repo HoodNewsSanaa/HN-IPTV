@@ -10,14 +10,14 @@ namespace HnIptv;
 internal static class LocalTranslationRuntime
 {
     internal static string Root=>Path.Combine(AppStorage.DataDirectory,"speech-whisper");
-    internal static string Model(TranslationSettings settings)=>Path.Combine(Root,settings.UsesLocalTranslation?"ggml-medium-q5_0.bin":"ggml-large-v3-turbo-q5_0.bin");
-    private static string Marker(TranslationSettings settings)=>Path.Combine(Root,settings.UsesLocalTranslation?"ready-medium-v1.json":"ready-v1.json");
+    internal static string Model(TranslationSettings settings)=>Path.Combine(Root,"ggml-medium-q5_0.bin");
+    private static string Marker(TranslationSettings settings)=>Path.Combine(Root,"ready-medium-v1.json");
     internal static string VadModel=>Path.Combine(Root,"ggml-silero-v6.2.0.bin");
     internal static string Worker=>Path.Combine(Path.GetDirectoryName(typeof(LocalTranslationRuntime).Assembly.Location)!,"HN-IPTV.SpeechWorker.exe");
     internal static bool IsReady(TranslationSettings settings)=>File.Exists(Model(settings))&&File.Exists(VadModel)&&File.Exists(Marker(settings));
     private static readonly HttpClient Http=new(){Timeout=TimeSpan.FromMinutes(30)};
     private static readonly SemaphoreSlim SetupGate=new(1,1);
-    private const string Hash="394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2";
+    private const string Hash="19fea4b380c3a618ec4723c3eef2eb785ffba0d0538cf43f8f235e7b3b34220f";
     internal static string Runtime(string backend)=>Path.GetDirectoryName(Worker)!;
     internal static string PreparedBackend(TranslationSettings settings) {try{using var d=JsonDocument.Parse(File.ReadAllText(Marker(settings)));return d.RootElement.GetProperty("backend").GetString()=="vulkan"?"vulkan":"cpu";}catch{return "cpu";}}
     internal static async Task InstallAsync(TranslationSettings settings,Action<string> progress,CancellationToken ct)
@@ -25,10 +25,10 @@ internal static class LocalTranslationRuntime
         await SetupGate.WaitAsync(ct);
         try {
             Directory.CreateDirectory(Root);
-            string model=Model(settings),hash=settings.UsesLocalTranslation?"19fea4b380c3a618ec4723c3eef2eb785ffba0d0538cf43f8f235e7b3b34220f":Hash;
+            string model=Model(settings),hash=Hash;
             if(!File.Exists(model)) {
-                progress(settings.UsesLocalTranslation?"Downloading Whisper Medium Q5 for on-device English translation (539 MB)...":"Downloading multilingual Whisper large-v3-turbo Q5 (574 MB)...");
-                string url=settings.UsesLocalTranslation?"https://huggingface.co/ggerganov/whisper.cpp/resolve/f281eb45af861ab5e5297d23694b7d46e090c02c/ggml-medium-q5_0.bin":"https://huggingface.co/ggerganov/whisper.cpp/resolve/98aa99a0a9db05ae2342309f5096248665f7cba3/ggml-large-v3-turbo-q5_0.bin";
+                progress("Downloading Whisper Medium Q5 for on-device English translation (539 MB)...");
+                string url="https://huggingface.co/ggerganov/whisper.cpp/resolve/f281eb45af861ab5e5297d23694b7d46e090c02c/ggml-medium-q5_0.bin";
                 await Download(url,model,hash,600_000_000,progress,ct);
             }else await PackageIntegrity.VerifyAsync(model,hash,ct);
             const string vadHash="2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987";
@@ -42,7 +42,7 @@ internal static class LocalTranslationRuntime
             catch(OperationCanceledException){throw;}
             catch when(backend=="vulkan"&&settings.Acceleration=="auto"){progress("GPU unavailable; validating CPU fallback. Buffered playback may refill more often on CPU.");backend="cpu";await Validate(backend,settings,ct);}
             await File.WriteAllTextAsync(Marker(settings),JsonSerializer.Serialize(new{backend,model_sha256=hash}),ct);
-            progress(settings.UsesLocalTranslation?"Whisper ready. English translation stays on this device; no Azure key or translation connection is needed.":"Whisper ready. Azure translates recognized text; audio stays local.");
+            progress("Whisper ready. English translation stays on this device.");
         }finally{SetupGate.Release();}
     }
     private static async Task Validate(string backend,TranslationSettings settings,CancellationToken ct)
@@ -80,7 +80,7 @@ internal sealed class LocalTranslationWorker:IAsyncDisposable
     {
         Backend=backend??(settings.Acceleration is "cpu" or "vulkan"?settings.Acceleration:LocalTranslationRuntime.PreparedBackend(settings));
         var info=new ProcessStartInfo(LocalTranslationRuntime.Worker){UseShellExecute=false,CreateNoWindow=true,WindowStyle=ProcessWindowStyle.Hidden,RedirectStandardOutput=true,RedirectStandardError=true,RedirectStandardInput=true};
-        foreach(string arg in new[]{LocalTranslationRuntime.Runtime(Backend),LocalTranslationRuntime.Model(settings),settings.InputLanguage,Backend,settings.BufferSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),settings.UsesLocalTranslation?"translate":"transcribe"})info.ArgumentList.Add(arg);
+        foreach(string arg in new[]{LocalTranslationRuntime.Runtime(Backend),LocalTranslationRuntime.Model(settings),settings.InputLanguage,Backend,settings.BufferSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),"translate"})info.ArgumentList.Add(arg);
         _process=Process.Start(info)??throw new IOException("Could not start Whisper.");
         _errors=Task.Run(async()=>{try{while(await _process.StandardError.ReadLineAsync()!=null){}}catch{}});
     }

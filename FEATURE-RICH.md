@@ -1,21 +1,21 @@
-# Feature Rich 0.15.0 — on-device Whisper translation
+# Feature Rich 0.16.0
 
-Choose **Whisper on device (English)** under Translation settings → Speech → Translation engine, then click Download / prepare Whisper and save. The multilingual Medium Q5 model downloads once (539,212,467 bytes), with the existing 0.9 MB Silero speech detector reused. Whisper recognizes foreign speech and translates it directly into English on this PC. No Azure key, text quota, or cloud translation request is used in this mode. Media streams and first-time component downloads still need their normal network connections.
+Whisper Medium Q5 recognizes speech and translates directly into English on the device. Azure is removed. Old provider settings normalize to local English translation. Existing Medium and Silero downloads are reused; prepare Whisper in settings if upgrading from a Turbo-only installation. No translation key or cloud translation request is used.
 
-New settings default to on-device translation. Existing saved Azure settings retain their selected provider; switch the engine explicitly to use the new local mode. Local output is always English. Choose Azure for other output languages; that mode keeps the existing Turbo Q5 recognition model, Azure key and region controls. Medium is used for local translation because Turbo is not trained for speech translation.
+Open Info for Whisper state, the input language reported by Whisper, any manual input override, and its latest English output. The latest output is generated ahead of the displayed video in buffered mode and is labeled accordingly. It is held in memory, limited in length, never written to diagnostics, and cleared on stop, channel changes and settings restarts. An unknown language is shown as unknown rather than guessed from your Windows language.
 
-Vulkan GPU and CPU runtimes remain bundled; no Python or CUDA toolkit download is needed. Auto validates the GPU runtime and can fall back to CPU. Local Medium translation may take longer than Turbo recognition plus Azure, particularly on CPU. The selected buffer is a target, not a guaranteed maximum latency; playback refills if the model falls behind.
+The existing adaptive speech boundaries, Vulkan/CPU acceleration, Live and synchronized 10/15-second modes remain. Whisper only translates into English. CPU processing can cause additional buffering; a 15-second target is not a hard latency ceiling.
 
-## Buffered captions
+## Startup updates
 
-Click Translate speech and choose Live, Generous time — 10 seconds, or Generous time — 15 seconds (recommended). A local speech detector proposes pauses after four seconds; Whisper punctuation helps finalize complete sentences. Unfinished text waits for more context, bounded by an eight-second batch in 10-second mode or a twelve-second batch in 15-second mode. This is heuristic sentence grouping, not guaranteed paragraph or idea detection. Text does not fully preserve emotion or tone.
+Each ordinary launch checks the Feature Rich releases before showing the main window. The startup panel offers progress and Continue without updating. The check has a short timeout; unavailable networks and invalid update metadata fall back to the installed app. Downloads can be cancelled. A verified newer version installs silently and relaunches; the update relaunch bypasses one check to avoid loops. A failed installed update has a one-hour retry cooldown. The manual update button remains available.
 
-The mpv build takes recognition audio ahead of playback from one incoming feed and delays original audio/video together. Compact captions follow media time, pause with the video, and rise above fullscreen controls. Translated-word alignment is approximate within the source speech interval.
+Automatic execution requires the SHA-256 published in release notes to match GitHub's asset digest. Downloads use fixed repository/channel asset paths over HTTPS and are size-limited. The installer is hashed again and locked against replacement before execution. Installation runs as the current user with no elevation request. Portable updates retain file rollback and preserve the data directory. Installed updates use the existing Inno Setup installer and reopen the app after an installation failure; a severely damaged existing installation may still require running setup manually.
 
-The FFmpeg 9.0.2 media transport is reused or downloaded once (115 MB compressed). Temporary media is limited to 512 MB per session and cleaned on stop, channel changes and next use after a crash. A long pause can exceed the rolling window and require rebuilding the buffer. Live mode remains available.
+These releases are not Authenticode signed. The security model trusts this GitHub repository, its release workflow and HTTPS; digests are not an independent publisher signature and cannot protect against a compromised publishing account. Stronger publisher authentication requires establishing code signing or an independently secured signing key.
 
-## Installation
+The startup updater does not run against test data. Model/playlist/credential contents are never included in update metadata or logs. Existing unused model downloads and encrypted credential files are not read or automatically removed by the new translation flow.
 
-Install HN-IPTV-Setup.exe over the existing installation. Saved playlists, preferences, Azure credentials and existing model downloads are retained. Medium and Turbo have separate readiness markers, so preparing one mode does not falsely mark the other model ready. The feature-rich-v* prerelease update channel is unchanged.
+## Timeshift
 
-Real Spanish-to-English local translation, English recognition, adaptive speech boundaries, native playback, pause/fullscreen/PiP, core checks and installer upgrades are checked before publication. GPU performance still needs validation on the user's hardware. Screen OCR remains retired; channel-provided CC is available.
+The translation buffer holds media received during this session; it is not provider catch-up TV. Provider catch-up/archive flags and historical playback are not currently implemented, so no claim is made that a channel supports archive playback.

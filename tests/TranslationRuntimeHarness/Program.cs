@@ -12,7 +12,7 @@ storage.GetProperty("TestDataDirectory",BindingFlags.Static|BindingFlags.NonPubl
 storage.GetMethod("Initialize",BindingFlags.Static|BindingFlags.Public)!.Invoke(null,null);
 var runtime=assembly.GetType("HnIptv.LocalTranslationRuntime",true)!;
 bool local=args.Length==5&&args[4]=="local";
-var settings=new TranslationSettings{Provider=local?"whisper":"azure",InputLanguage=local?"auto":"en",OutputLanguage=local?"en":"es",Acceleration="cpu"};
+var settings=new TranslationSettings{Provider="whisper",InputLanguage=local?"auto":"en",OutputLanguage=local?"en":"es",Acceleration="cpu"};
 string legacy=Path.Combine(data,"translation");Directory.CreateDirectory(legacy);File.WriteAllText(Path.Combine(legacy,"legacy-test-model"),"fake old model");
 string sentinel=Path.Combine(data,"playlist-sentinel");File.WriteAllText(sentinel,"keep playlists and keys outside legacy directory");
 await (Task)runtime.GetMethod("InstallAsync",BindingFlags.Static|BindingFlags.NonPublic)!.Invoke(null,[settings,(Action<string>)Console.WriteLine,CancellationToken.None])!;
@@ -23,9 +23,9 @@ var prepare=type.GetMethod("PrepareAsync",BindingFlags.Instance|BindingFlags.Non
 var recognize=type.GetMethod("RecognizeAsync",BindingFlags.Instance|BindingFlags.NonPublic)!;
 var finish=type.GetMethod("FinishAsync",BindingFlags.Instance|BindingFlags.NonPublic)!;
 var reset=type.GetMethod("ResetAsync",BindingFlags.Instance|BindingFlags.NonPublic)!;
-var elapsed=System.Diagnostics.Stopwatch.StartNew();var texts=new List<string>();var timed=new List<(double Start,double End)>();
+var elapsed=System.Diagnostics.Stopwatch.StartNew();var languages=new List<string>();var texts=new List<string>();var timed=new List<(double Start,double End)>();
 async Task Results(Task task){await task;var value=task.GetType().GetProperty("Result")!.GetValue(task);foreach(var item in (System.Collections.IEnumerable)value!){
-    string text=(string)item.GetType().GetProperty("Text")!.GetValue(item)!;texts.Add(text);
+    string text=(string)item.GetType().GetProperty("Text")!.GetValue(item)!;texts.Add(text);languages.Add((string)item.GetType().GetProperty("Language")!.GetValue(item)!);
     if(text.Any(char.IsLetterOrDigit)&&(bool)item.GetType().GetProperty("Final")!.GetValue(item)!)timed.Add(((double)item.GetType().GetProperty("StartSeconds")!.GetValue(item)!,(double)item.GetType().GetProperty("EndSeconds")!.GetValue(item)!));
 }}
 try {
@@ -48,6 +48,7 @@ try {
     string combined=string.Join(" ",texts);
     Console.WriteLine("Synthetic fixture result: "+combined);
     if(!combined.Contains("hello",StringComparison.OrdinalIgnoreCase))throw new Exception("Native worker did not recognize or translate the spoken greeting.");
+    if(local&&!languages.Contains("es"))throw new Exception("Whisper did not report detected Spanish input language.");
     if(local&&(combined.Contains("hola",StringComparison.OrdinalIgnoreCase)||!(combined.Contains("translation",StringComparison.OrdinalIgnoreCase)||combined.Contains("test",StringComparison.OrdinalIgnoreCase))))throw new Exception("Spanish speech was not translated into English locally.");
     if(!texts.Any(x=>x.Contains('.')||x.Contains('?')))throw new Exception("Whisper did not preserve sentence punctuation.");
     if(timed.Count==0||timed.Any(t=>t.Start<0||t.End<=t.Start||t.End>pcm.Length/(rate*2d)+1.8))throw new Exception("Whisper segment timestamps do not match the input audio clock.");
@@ -56,5 +57,5 @@ try {
     await Results((Task)finish.Invoke(worker,[CancellationToken.None])!);
     if(texts.Any(x=>!string.IsNullOrWhiteSpace(x)))throw new Exception("Old channel words leaked into silence after reset.");
 }finally{await worker.DisposeAsync();}
-File.WriteAllText(args[2],JsonSerializer.Serialize(new{passed=true,adaptive_endpoint=true,previous_downloads_preserved=true,local_translation=local,model=local?"Whisper Medium Q5":"Whisper large-v3-turbo Q5",seconds=elapsed.Elapsed.TotalSeconds,backend="cpu"}));
+File.WriteAllText(args[2],JsonSerializer.Serialize(new{passed=true,adaptive_endpoint=true,previous_downloads_preserved=true,local_translation=true,model="Whisper Medium Q5",seconds=elapsed.Elapsed.TotalSeconds,backend="cpu"}));
 Console.WriteLine("Actual native worker speech, reset, silence and migration checks passed.");
