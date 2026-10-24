@@ -88,7 +88,8 @@ try {
     try {
         $hash = (Get-FileHash -InputStream $input -Algorithm SHA256).Hash
         if ($hash -ne $job.hash) { throw 'Installer verification failed.' }
-        $arguments = @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-',('/DIR="' + $job.destination + '"'))
+        $installDirectory = [IO.Path]::GetFullPath($job.destination).TrimEnd('\')
+        $arguments = @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-',('/DIR="' + $installDirectory + '"'))
         $install = Start-Process -FilePath $job.package -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru
         if ($install.ExitCode -ne 0) { throw 'Installer failed.' }
     } finally { $input.Dispose() }
